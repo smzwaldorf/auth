@@ -1,0 +1,81 @@
+{
+  "$schema": "./directory.seed.schema.json",
+  "version": 1,
+  "school": { "code": "example-school", "displayName": "Example School" },
+  "people": [
+    {
+      "id": "10000000-0000-4000-8000-000000000001",
+      "kind": "adult",
+      "displayName": "Example Guardian Teacher",
+      "loginEmail": "approved.guardian@example.invalid",
+      "status": "active",
+      "roles": ["parent", "teacher"],
+      "invitation": { "id": "20000000-0000-4000-8000-000000000001", "status": "pending" }
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000002",
+      "kind": "student",
+      "displayName": "Example Student",
+      "status": "active",
+      "roles": ["student"]
+    }
+  ],
+  "families": [
+    {
+      "id": "30000000-0000-4000-8000-000000000001",
+      "code": "example-family",
+      "displayName": "Example Family",
+      "status": "active",
+      "memberships": [
+        { "id": "31000000-0000-4000-8000-000000000001", "personId": "10000000-0000-4000-8000-000000000001", "relationship": "guardian", "status": "active" },
+        { "id": "31000000-0000-4000-8000-000000000002", "personId": "10000000-0000-4000-8000-000000000002", "relationship": "child", "status": "active" }
+      ]
+    }
+  ],
+  "classes": [
+    {
+      "id": "40000000-0000-4000-8000-000000000004",
+      "code": "G4",
+      "displayName": "Grade 4",
+      "status": "active",
+      "memberships": [
+        { "id": "41000000-0000-4000-8000-000000000001", "personId": "10000000-0000-4000-8000-000000000002", "relationship": "student", "status": "active" }
+      ]
+    },
+    {
+      "id": "40000000-0000-4000-8000-000000000006",
+      "code": "G6",
+      "displayName": "Grade 6",
+      "status": "active",
+      "memberships": [
+        { "id": "41000000-0000-4000-8000-000000000002", "personId": "10000000-0000-4000-8000-000000000001", "relationship": "teacher", "status": "active" }
+      ]
+    }
+  ],
+  "applications": [
+    {
+      "clientId": "vite-app",
+      "displayName": "Vite App A",
+      "clientType": "public",
+      "publicOrigin": "http://localhost:5173",
+      "redirectUris": ["http://localhost:5173/callback"],
+      "postLogoutRedirectUris": ["http://localhost:5173/"],
+      "scopes": ["openid", "profile", "email", "directory:access", "offline_access"],
+      "enabled": true
+    },
+    {
+      "clientId": "express-app",
+      "displayName": "Express App B",
+      "clientType": "confidential",
+      "clientSecretEnv": "APP_B_CLIENT_SECRET",
+      "redirectUris": ["http://localhost:4000/auth/callback"],
+      "postLogoutRedirectUris": ["http://localhost:4000/"],
+      "scopes": ["openid", "profile", "email", "directory:access", "offline_access"],
+      "enabled": true
+    }
+  ],
+  "appAccess": [
+    { "personId": "10000000-0000-4000-8000-000000000001", "clientId": "vite-app", "status": "active" },
+    { "personId": "10000000-0000-4000-8000-000000000001", "clientId": "express-app", "status": "active" }
+  ]
+}

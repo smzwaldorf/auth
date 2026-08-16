@@ -1,0 +1,39 @@
+{
+  "name": "smz-auth-prototype",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:auth dev:app-a dev:app-b",
+    "dev:auth": "npm run dev -w @smz/auth-server",
+    "dev:app-a": "npm run dev -w @smz/vite-app",
+    "dev:app-b": "npm run dev -w @smz/express-app",
+    "build": "npm-run-all build:auth build:app-a build:app-b",
+    "build:auth": "npm run build -w @smz/auth-server",
+    "build:app-a": "npm run build -w @smz/vite-app",
+    "build:app-b": "npm run build -w @smz/express-app",
+    "typecheck": "npm-run-all typecheck:auth typecheck:app-a typecheck:app-b",
+    "typecheck:auth": "npm run typecheck -w @smz/auth-server",
+    "typecheck:app-a": "npm run typecheck -w @smz/vite-app",
+    "typecheck:app-b": "npm run typecheck -w @smz/express-app",
+    "test": "npm run test -w @smz/auth-server",
+    "db:generate": "npm run db:generate -w @smz/auth-server",
+    "db:migrate": "npm run db:migrate -w @smz/auth-server",
+    "directory:seed": "npm run directory:seed -w @smz/auth-server --",
+    "start": "npm-run-all --parallel start:auth start:app-a start:app-b",
+    "start:auth": "npm run start -w @smz/auth-server",
+    "start:app-a": "npm run preview -w @smz/vite-app",
+    "start:app-b": "npm run start -w @smz/express-app"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

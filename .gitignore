@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.DS_Store
+*.log
+coverage/
+*.tsbuildinfo
+packages/auth-server/seeds/*.private.json
+packages/auth-server/seeds/directory.seed.json

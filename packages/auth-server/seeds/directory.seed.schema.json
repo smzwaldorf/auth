@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://smz.example/schemas/directory-seed-v1.json",
+  "title": "SMZ single-school directory seed",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "school", "people", "families", "classes", "applications", "appAccess"],
+  "properties": {
+    "version": { "const": 1 },
+    "school": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "displayName"],
+      "properties": { "code": { "type": "string", "minLength": 1 }, "displayName": { "type": "string", "minLength": 1 } }
+    },
+    "people": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "displayName", "roles"],
+        "properties": {
+          "id": { "$ref": "#/$defs/uuid" },
+          "kind": { "enum": ["adult", "student"] },
+          "displayName": { "type": "string", "minLength": 1 },
+          "loginEmail": { "type": "string", "format": "email" },
+          "status": { "$ref": "#/$defs/lifecycle" },
+          "roles": { "type": "array", "minItems": 1, "items": { "enum": ["admin", "teacher", "parent", "student"] } },
+          "invitation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id"],
+            "properties": {
+              "id": { "$ref": "#/$defs/uuid" },
+              "status": { "enum": ["pending", "activated", "expired", "revoked"] },
+              "expiresAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    "families": { "type": "array", "items": { "$ref": "#/$defs/family" } },
+    "classes": { "type": "array", "items": { "$ref": "#/$defs/class" } },
+    "applications": { "type": "array", "items": { "$ref": "#/$defs/application" } },
+    "appAccess": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["personId", "clientId"],
+        "properties": {
+          "personId": { "$ref": "#/$defs/uuid" },
+          "clientId": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["active", "revoked"] }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "date": { "type": "string", "format": "date" },
+    "lifecycle": { "enum": ["active", "disabled"] },
+    "membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "personId", "relationship"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "personId": { "$ref": "#/$defs/uuid" },
+        "relationship": { "type": "string" },
+        "status": { "enum": ["active", "inactive"] },
+        "startsOn": { "$ref": "#/$defs/date" },
+        "endsOn": { "$ref": "#/$defs/date" }
+      }
+    },
+    "family": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "code", "displayName", "memberships"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "code": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/lifecycle" },
+        "memberships": { "type": "array", "items": { "allOf": [{ "$ref": "#/$defs/membership" }, { "properties": { "relationship": { "enum": ["father", "mother", "guardian", "child"] } } }] } }
+      }
+    },
+    "class": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "code", "displayName", "memberships"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "code": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/lifecycle" },
+        "memberships": { "type": "array", "items": { "allOf": [{ "$ref": "#/$defs/membership" }, { "properties": { "relationship": { "enum": ["teacher", "student"] } } }] } }
+      }
+    },
+    "application": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clientId", "displayName", "clientType", "redirectUris", "scopes"],
+      "properties": {
+        "clientId": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string", "minLength": 1 },
+        "clientType": { "enum": ["public", "confidential"] },
+        "clientSecretEnv": { "type": "string", "minLength": 1 },
+        "publicOrigin": { "type": "string", "format": "uri" },
+        "redirectUris": { "type": "array", "minItems": 1, "items": { "type": "string", "format": "uri" } },
+        "postLogoutRedirectUris": { "type": "array", "items": { "type": "string", "format": "uri" } },
+        "scopes": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "enabled": { "type": "boolean" }
+      }
+    }
+  }
+}

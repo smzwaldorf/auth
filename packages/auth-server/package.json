@@ -1,0 +1,35 @@
+{
+  "name": "@smz/auth-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run src",
+    "test:integration": "RUN_DB_TESTS=true vitest run tests/integration --no-file-parallelism",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "directory:seed": "tsx src/seed/cli.ts",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@better-auth/drizzle-adapter": "1.6.29",
+    "@better-auth/oauth-provider": "1.6.29",
+    "@hono/node-server": "2.1.1",
+    "better-auth": "1.6.29",
+    "dotenv": "^17.2.1",
+    "drizzle-orm": "0.45.2",
+    "hono": "4.13.2",
+    "pg": "^8.16.3",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/pg": "^8.15.5",
+    "drizzle-kit": "0.31.10",
+    "tsx": "^4.20.5",
+    "vitest": "^3.2.4"
+  }
+}
