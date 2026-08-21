@@ -169,6 +169,20 @@ export const loginInvitations = directorySchema.table(
   ],
 );
 
+// This is an allowlist, not an authentication bypass.  It exists solely to
+// make local and test OIDC journeys repeatable without Google or email.
+export const developmentLoginAccounts = directorySchema.table(
+  "development_login_accounts",
+  {
+    personId: uuid("person_id")
+      .primaryKey()
+      .references(() => people.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    ...timestamps,
+  },
+);
+
 export const auditEvents = directorySchema.table(
   "audit_events",
   {

@@ -15,6 +15,15 @@ const configSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32).default("local-better-auth-secret-change-me-32-chars"),
   GOOGLE_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
+  MAGIC_LINK_DELIVERY_WEBHOOK_URL: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.string().url().optional(),
+  ),
+  MAGIC_LINK_DELIVERY_WEBHOOK_TOKEN: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.string().optional(),
+  ),
+  DEV_LOGIN_ENABLED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
   APP_B_CLIENT_SECRET: z.string().min(16).default("local-app-b-client-secret-change-me"),
 });
 
@@ -24,4 +33,5 @@ export const projectRootPath = projectRoot;
 export const authOrigin = new URL(config.AUTH_ISSUER).origin;
 export const authPort = Number(new URL(config.AUTH_ISSUER).port || 3000);
 export const directoryAudience = "smz-directory";
-export const trustedClientIds = new Set(["vite-app", "express-app"]);
+export const trustedClientIds = new Set(["vite-app", "express-app", "email-cms"]);
+export const developmentLoginEnabled = config.NODE_ENV !== "production" && config.DEV_LOGIN_ENABLED;

@@ -12,6 +12,7 @@ import {
   auditEvents,
   classMemberships,
   classes,
+  developmentLoginAccounts,
   families,
   familyMemberships,
   loginInvitations,
@@ -88,6 +89,15 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
               updatedAt: now,
             },
           });
+      }
+
+      if (person.developmentLogin) {
+        await tx
+          .insert(developmentLoginAccounts)
+          .values({ personId: person.id, label: person.developmentLogin.label, enabled: true, updatedAt: now })
+          .onConflictDoUpdate({ target: developmentLoginAccounts.personId, set: { label: person.developmentLogin.label, enabled: true, updatedAt: now } });
+      } else {
+        await tx.delete(developmentLoginAccounts).where(eq(developmentLoginAccounts.personId, person.id));
       }
     }
 

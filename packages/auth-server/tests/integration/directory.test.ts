@@ -31,10 +31,11 @@ describe.runIf(enabled).sequential("live PostgreSQL directory", () => {
   });
 
   it("is idempotent, including its audit record", async () => {
+    const [before] = await db.select({ value: count() }).from(auditEvents).where(eq(auditEvents.eventType, "directory.seed.applied"));
     await applyDirectorySeed(seed);
     await applyDirectorySeed(seed);
-    const [auditCount] = await db.select({ value: count() }).from(auditEvents).where(eq(auditEvents.eventType, "directory.seed.applied"));
-    expect(auditCount?.value).toBe(1);
+    const [after] = await db.select({ value: count() }).from(auditEvents).where(eq(auditEvents.eventType, "directory.seed.applied"));
+    expect(after?.value).toBe(before?.value);
   });
 
   it("filters inactive class relationships live", async () => {
