@@ -13,7 +13,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 
-import { auth } from "./auth";
+import { appBOrigin, auth, authServiceOrigin } from "./auth";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
 
@@ -96,7 +96,7 @@ function App() {
     async function loadDirectory(currentUser: User | null) {
       setUser(currentUser);
       if (!currentUser?.access_token) { setAccessContext(undefined); return; }
-      const response = await fetch("http://localhost:3000/api/directory/v1/me/access-context", { headers: { Authorization: `Bearer ${currentUser.access_token}` } });
+      const response = await fetch(`${authServiceOrigin}/api/directory/v1/me/access-context`, { headers: { Authorization: `Bearer ${currentUser.access_token}` } });
       if (!response.ok) throw new Error(`Directory access failed (${response.status})`);
       setAccessContext(await response.json() as AccessContext);
     }
@@ -106,7 +106,7 @@ function App() {
           const returnTo = new URLSearchParams(window.location.search).get("returnTo");
           globalLogoutChannel.postMessage("logout");
           await clearLocalAuthentication();
-          window.location.replace(returnTo === "app-b" ? "http://localhost:4000/" : "/");
+          window.location.replace(returnTo === "app-b" ? `${appBOrigin}/` : "/");
           return;
         }
         if (window.location.pathname === "/callback") { await auth.signinRedirectCallback(); window.history.replaceState({}, document.title, "/"); }
@@ -127,7 +127,7 @@ function App() {
     globalLogoutChannel.postMessage("logout");
     try { await auth.revokeTokens(["access_token", "refresh_token"]); } catch { /* Continue through the logout chain. */ }
     await auth.removeUser();
-    window.location.assign("http://localhost:3000/logout-all/app-a");
+    window.location.assign(`${authServiceOrigin}/logout-all/app-a`);
   }
 
   return (
@@ -141,7 +141,7 @@ function App() {
       <section className={`status ${signedIn ? "authenticated" : "anonymous"}`}><div className="status-dot" /><div><span className="eyebrow">Vite App A session</span><strong>{loading ? "Checking session…" : signedIn ? "Authenticated" : "Not authenticated"}</strong></div>{signedIn && user && <small>{String(user.profile.email ?? user.profile.sub)}</small>}</section>
       {error && <p className="error">{error}</p>}
       {signedIn && user && <section className="session-details"><span>Client <code>vite-app</code></span><span>Flow <code>Authorization Code + PKCE S256</code></span><span>Directory <code>{accessContext?.access ?? "checking"}</code></span><span>Roles <code>{accessContext?.roles.join(", ") || "none"}</code></span></section>}
-      <div className="actions">{signedIn ? <button className="secondary" onClick={() => void signOutEverywhere()}>Sign out everywhere</button> : <button onClick={() => void auth.signinRedirect({ nonce: crypto.randomUUID() })}>Sign in through SMZ Auth</button>}<a href="http://localhost:4000">Open Express App B <span>↗</span></a></div>
+      <div className="actions">{signedIn ? <button className="secondary" onClick={() => void signOutEverywhere()}>Sign out everywhere</button> : <button onClick={() => void auth.signinRedirect({ nonce: crypto.randomUUID() })}>Sign in through SMZ Auth</button>}<a href={appBOrigin}>Open Express App B <span>↗</span></a></div>
     </main>
   );
 }

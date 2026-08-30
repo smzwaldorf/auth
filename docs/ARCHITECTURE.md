@@ -45,13 +45,13 @@ An authenticating adult’s `directory.people.id`, Better Auth `auth.user.id`, a
 - Authorization Code + PKCE S256 is required for public and confidential clients.
 - Exact redirect URIs are stored in PostgreSQL.
 - The Vite origin is read live from the registered application before CORS is granted.
-- Access tokens require audience `smz-directory` and scope `directory:access`.
+- Access tokens require the canonical directory API URL audience and scope `directory:access`.
 - Client secrets and OAuth tokens are stored hashed or encrypted; real seed data and `.env` are ignored.
 - App/person lifecycle is checked at token issue/refresh and at every directory request.
 
-The latest stable OAuth Provider line (1.6.x) is still flagged by `GHSA-p2fr-6hmx-4528`; its upstream fix is currently prerelease-only. This service applies the advisory's stable-line workaround: one configured resource audience, token issuance rejects every other resource, and the directory API accepts no audience set beyond `smz-directory` plus the provider's OIDC UserInfo audience. Upgrade and migrate when a patched stable Better Auth release is published.
+Better Auth and its OAuth Provider run on the patched 1.7.2 package family. The directory API is a persisted OAuth resource, every allowed client has an explicit resource link, and authorization rejects unregistered resources before code or token issuance. The directory API also verifies issuer, canonical audience URL, scope, authorized party, and live person/application access.
 
-Production still needs HTTPS, managed secret/key rotation, durable application session storage, database backups, monitoring, and a manual real-Google release smoke.
+Production startup requires HTTPS and explicit non-placeholder secrets. App B sessions are durable in PostgreSQL, and the operations runbook covers deployment and backup/restore. A production release still requires operator-provisioned secret rotation, monitoring, and a manual real-Google and magic-link smoke test.
 
 ## Future `email-cms` contract
 

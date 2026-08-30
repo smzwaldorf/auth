@@ -11,7 +11,7 @@ describe("global logout coordinator", () => {
   });
 
   it("routes through App B's local-session cleanup endpoint", () => {
-    expect(appBLogoutUrl("app-a")).toBe("http://localhost:4000/logout/local?returnTo=app-a");
-    expect(appBLogoutUrl("app-b")).toBe("http://localhost:4000/logout/local?returnTo=app-b");
+    expect(appBLogoutUrl("http://localhost:4000", "app-a")).toBe("http://localhost:4000/logout/local?returnTo=app-a");
+    expect(appBLogoutUrl("http://localhost:4000", "app-b")).toBe("http://localhost:4000/logout/local?returnTo=app-b");
   });
 });

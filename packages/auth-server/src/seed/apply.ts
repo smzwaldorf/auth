@@ -4,7 +4,7 @@ import process from "node:process";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { config } from "../config.js";
+import { config, directoryAudience, publicPortForHost } from "../config.js";
 import {
   account,
   appAccess,
@@ -18,8 +18,10 @@ import {
   loginInvitations,
   oauthAccessToken,
   oauthClient,
+  oauthClientResource,
   oauthConsent,
   oauthRefreshToken,
+  oauthResource,
   people,
   personRoles,
   session,
@@ -29,6 +31,25 @@ import { normalizeEmail, type DirectorySeed } from "./model.js";
 
 function hashClientSecret(value: string): string {
   return createHash("sha256").update(value).digest("base64url");
+}
+
+function registeredClientUris(uris: string[]): string[] {
+  const tailnetTargets = [
+    ...(config.TAILSCALE_HOST ? [{ host: config.TAILSCALE_HOST, protocol: "https:" }] : []),
+  ];
+  if (!tailnetTargets.length) return uris;
+  const tailnetUris = uris.flatMap((uri) => tailnetTargets.map((target) => {
+    const destination = new URL(uri);
+    if (destination.hostname === "localhost" || destination.hostname === "127.0.0.1") {
+      destination.hostname = target.host;
+      destination.protocol = target.protocol;
+      if (target.host === config.TAILSCALE_HOST) {
+        destination.port = String(publicPortForHost(target.host, Number(destination.port || (destination.protocol === "https:" ? 443 : 80))));
+      }
+    }
+    return destination.toString();
+  }));
+  return [...new Set([...uris, ...tailnetUris])];
 }
 
 function seedAuditId(seed: DirectorySeed): string {
@@ -171,7 +192,35 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
       }
     }
 
+    await tx
+      .insert(oauthResource)
+      .values({
+        id: `resource:${directoryAudience}`,
+        identifier: directoryAudience,
+        name: "SMZ Directory API",
+        accessTokenTtl: 15 * 60,
+        refreshTokenTtl: 30 * 24 * 60 * 60,
+        allowedScopes: ["directory:access"],
+        dpopBoundAccessTokensRequired: false,
+        disabled: false,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: oauthResource.identifier,
+        set: {
+          name: "SMZ Directory API",
+          accessTokenTtl: 15 * 60,
+          refreshTokenTtl: 30 * 24 * 60 * 60,
+          allowedScopes: ["directory:access"],
+          disabled: false,
+          updatedAt: now,
+        },
+      });
+
     for (const application of seed.applications) {
+      const redirectUris = registeredClientUris(application.redirectUris);
+      const postLogoutRedirectUris = registeredClientUris(application.postLogoutRedirectUris);
       const rawSecret = application.clientSecretEnv
         ? process.env[application.clientSecretEnv] ?? (application.clientSecretEnv === "APP_B_CLIENT_SECRET" ? config.APP_B_CLIENT_SECRET : undefined)
         : undefined;
@@ -192,9 +241,10 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
           createdAt: now,
           updatedAt: now,
           name: application.displayName,
-          redirectUris: application.redirectUris,
-          postLogoutRedirectUris: application.postLogoutRedirectUris,
+          redirectUris,
+          postLogoutRedirectUris,
           tokenEndpointAuthMethod: application.clientType === "public" ? "none" : "client_secret_post",
+          applicationType: "web",
           grantTypes: ["authorization_code", "refresh_token"],
           responseTypes: ["code"],
           public: application.clientType === "public",
@@ -212,9 +262,10 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
             scopes: application.scopes,
             updatedAt: now,
             name: application.displayName,
-            redirectUris: application.redirectUris,
-            postLogoutRedirectUris: application.postLogoutRedirectUris,
+            redirectUris,
+            postLogoutRedirectUris,
             tokenEndpointAuthMethod: application.clientType === "public" ? "none" : "client_secret_post",
+            applicationType: "web",
             grantTypes: ["authorization_code", "refresh_token"],
             responseTypes: ["code"],
             public: application.clientType === "public",
@@ -223,6 +274,22 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
             metadata: { clientId: application.clientId },
           },
         });
+
+      if (application.scopes.includes("directory:access")) {
+        await tx
+          .insert(oauthClientResource)
+          .values({
+            id: `client-resource:${application.clientId}:${directoryAudience}`,
+            clientId: application.clientId,
+            resourceId: directoryAudience,
+            createdAt: now,
+          })
+          .onConflictDoNothing();
+      } else {
+        await tx
+          .delete(oauthClientResource)
+          .where(and(eq(oauthClientResource.clientId, application.clientId), eq(oauthClientResource.resourceId, directoryAudience)));
+      }
 
       await tx
         .insert(applications)

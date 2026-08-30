@@ -15,6 +15,17 @@ import {
 import { oauthClient } from "./auth-schema.js";
 
 export const directorySchema = pgSchema("directory");
+export const applicationSchema = pgSchema("application");
+
+export const expressSessions = applicationSchema.table(
+  "express_sessions",
+  {
+    sid: text("sid").primaryKey(),
+    sess: jsonb("sess").$type<Record<string, unknown>>().notNull(),
+    expire: timestamp("expire", { precision: 6 }).notNull(),
+  },
+  (table) => [index("express_sessions_expire_idx").on(table.expire)],
+);
 
 export const personKind = directorySchema.enum("person_kind", ["adult", "student"]);
 export const lifecycleStatus = directorySchema.enum("lifecycle_status", ["active", "disabled"]);

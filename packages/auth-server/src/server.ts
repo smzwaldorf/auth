@@ -22,7 +22,7 @@ import {
   waitForDevelopmentMagicLink,
 } from "./auth.js";
 import { listPeopleForAdmin, manageableRoles, updatePersonFromAdmin } from "./admin.js";
-import { authOrigin, authPort, config, directoryAudience } from "./config.js";
+import { authOrigin, authPort, config, directoryAudience, isSupportedPublicHost, originForHost, trustedBrowserOrigins } from "./config.js";
 import { closeDatabase, db } from "./db/client.js";
 import { applications } from "./db/schema.js";
 import { getAccessContext } from "./directory/access-context.js";
@@ -37,11 +37,13 @@ app.use("*", secureHeaders());
 app.use("/api/*", async (c, next) => {
   const origin = c.req.header("origin");
   if (!origin) return next();
-  const [registered] = await db
-    .select({ clientId: applications.clientId })
-    .from(applications)
-    .where(and(eq(applications.publicOrigin, origin), eq(applications.enabled, true)))
-    .limit(1);
+  const [registered] = trustedBrowserOrigins.has(origin)
+    ? [true]
+    : await db
+      .select({ clientId: applications.clientId })
+      .from(applications)
+      .where(and(eq(applications.publicOrigin, origin), eq(applications.enabled, true)))
+      .limit(1);
   if (!registered) return c.json({ error: "origin_not_registered" }, 403);
   c.header("Access-Control-Allow-Origin", origin);
   c.header("Access-Control-Allow-Credentials", "true");
@@ -53,9 +55,25 @@ app.use("/api/*", async (c, next) => {
   return next();
 });
 
-app.get("/", (c) =>
-  c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SMZ Identity</title><style>body{font:16px system-ui;margin:0;background:#f2eee8;color:#28211d}main{max-width:720px;margin:10vh auto;padding:36px;border:1px solid #ddd2c8;border-radius:24px;background:#fff}h1{margin-top:0}a{color:#8b3e25}code{background:#f6f2ee;padding:3px 6px;border-radius:5px}</style></head><body><main><h1>SMZ Identity</h1><p>Persistent Hono + Better Auth identity provider and single-school directory.</p><p>Google: <strong>${googleConfigured ? "configured" : "not configured"}</strong></p><p>Issuer: <code>${config.AUTH_ISSUER}</code></p><p><a href="http://localhost:5173">Vite App A</a> · <a href="http://localhost:4000">Express App B</a></p></main></body></html>`),
-);
+function publicHost(c: { req: { url: string } }): string | null {
+  try {
+    const host = new URL(c.req.url).hostname;
+    return isSupportedPublicHost(host) ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+function appOriginForRequest(c: { req: { url: string } }, port: number): string {
+  const host = publicHost(c);
+  return host ? originForHost(host, port) : authOrigin;
+}
+
+app.get("/", (c) => {
+  const viteOrigin = appOriginForRequest(c, 5173);
+  const expressOrigin = appOriginForRequest(c, 4000);
+  return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SMZ Identity</title><style>body{font:16px system-ui;margin:0;background:#f2eee8;color:#28211d}main{max-width:720px;margin:10vh auto;padding:36px;border:1px solid #ddd2c8;border-radius:24px;background:#fff}h1{margin-top:0}a{color:#8b3e25}code{background:#f6f2ee;padding:3px 6px;border-radius:5px}</style></head><body><main><h1>SMZ Identity</h1><p>Persistent Hono + Better Auth identity provider and single-school directory.</p><p>Google: <strong>${googleConfigured ? "configured" : "not configured"}</strong></p><p>Issuer: <code>${config.AUTH_ISSUER}</code></p><p><a href="${viteOrigin}">Vite App A</a> · <a href="${expressOrigin}">Express App B</a></p></main></body></html>`);
+});
 
 app.get("/health", async (c) => {
   await db.execute("select 1");
@@ -108,12 +126,14 @@ function escapeHtml(value: unknown): string {
   })[character] ?? character);
 }
 
-function sameOrigin(c: { req: { header: (name: string) => string | undefined } }): boolean {
+function sameOrigin(c: { req: { header: (name: string) => string | undefined; url: string } }): boolean {
+  const requestOrigin = appOriginForRequest(c, authPort);
   const origin = c.req.header("origin");
-  if (origin) return origin === authOrigin;
+  if (origin) return origin === authOrigin || origin === requestOrigin;
   const referer = c.req.header("referer");
   try {
-    return Boolean(referer && new URL(referer).origin === authOrigin);
+    const refererOrigin = referer ? new URL(referer).origin : undefined;
+    return refererOrigin === authOrigin || refererOrigin === requestOrigin;
   } catch {
     return false;
   }
@@ -294,6 +314,7 @@ app.post("/sign-in/magic-link", async (c) => {
   const body = await c.req.parseBody();
   const email = typeof body.email === "string" ? body.email : "";
   const oauthQuery = typeof body.oauth_query === "string" ? body.oauth_query : "";
+  if (!sameOrigin(c)) return c.redirect(signInUrl(oauthQuery, "invalid-request"));
   if (!email || !oauthQuery) return c.redirect(signInUrl(oauthQuery, "invalid-request"));
 
   const eligible = await activeInvitationForEmail(email);
@@ -390,7 +411,7 @@ app.get("/logout-all/:returnTo", async (c) => {
   const signOut = await auth.handler(
     new Request(`${config.AUTH_ISSUER}/sign-out`, { method: "POST", headers }),
   );
-  const responseHeaders = new Headers({ location: appBLogoutUrl(returnTo) });
+  const responseHeaders = new Headers({ location: appBLogoutUrl(appOriginForRequest(c, 4000), returnTo) });
   const clearedSessionCookies = (signOut.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.()
     ?? [signOut.headers.get("set-cookie")].filter((value): value is string => Boolean(value));
   for (const cookie of clearedSessionCookies) responseHeaders.append("set-cookie", cookie);
@@ -415,9 +436,9 @@ app.get("/api/directory/v1/me/access-context", async (c) => {
   const authorization = c.req.header("authorization");
   const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined;
   try {
-    const payload = await resourceClient.verifyAccessToken(token, {
+    const payload = await resourceClient.verifyBearerToken(token, {
       verifyOptions: { audience: directoryAudience, issuer: config.AUTH_ISSUER },
-      scopes: ["directory:access"],
+      requiredScopes: ["directory:access"],
       resourceMetadataMappings: {
         [directoryAudience]: `${authOrigin}/.well-known/oauth-protected-resource/smz-directory`,
       },
@@ -460,7 +481,7 @@ app.onError((error, c) => {
   return c.json({ error: "internal_server_error" }, 500);
 });
 
-const server = serve({ fetch: app.fetch, port: authPort }, () => {
+const server = serve({ fetch: app.fetch, port: authPort, hostname: "0.0.0.0" }, () => {
   console.log(`SMZ Identity listening on ${authOrigin}`);
   console.log(`OIDC issuer: ${config.AUTH_ISSUER}`);
 });

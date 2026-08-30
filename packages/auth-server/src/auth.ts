@@ -7,7 +7,7 @@ import { jwt } from "better-auth/plugins";
 import { magicLink } from "better-auth/plugins/magic-link";
 
 import { recordAuditEvent } from "./audit.js";
-import { config, developmentLoginEnabled, directoryAudience, trustedClientIds } from "./config.js";
+import { config, developmentLoginEnabled, directoryAudience, trustedBrowserOrigins, trustedClientIds } from "./config.js";
 import { db } from "./db/client.js";
 import { developmentLoginAccounts, loginInvitations, people, personRoles, user } from "./db/schema.js";
 import * as schema from "./db/schema.js";
@@ -202,7 +202,7 @@ export const auth = betterAuth({
   appName: "SMZ Identity",
   baseURL: config.AUTH_ISSUER,
   secret: config.BETTER_AUTH_SECRET,
-  trustedOrigins: ["http://localhost:5173", "http://localhost:4000", new URL(config.AUTH_ISSUER).origin],
+  trustedOrigins: [...trustedBrowserOrigins],
   database: drizzleAdapter(db, { provider: "pg", schema, transaction: true }),
   emailAndPassword: { enabled: false, disableSignUp: true },
   account: {
@@ -313,7 +313,9 @@ export const auth = betterAuth({
       loginPage: "/sign-in",
       consentPage: "/consent",
       scopes: ["openid", "profile", "email", "directory:access", "offline_access"],
-      validAudiences: [directoryAudience],
+      cachedResources: new Set([directoryAudience]),
+      enforcePerClientResources: true,
+      identifierValidator: (identifier) => identifier === directoryAudience,
       grantTypes: ["authorization_code", "refresh_token"],
       cachedTrustedClients: trustedClientIds,
       allowDynamicClientRegistration: false,
@@ -322,15 +324,16 @@ export const auth = betterAuth({
       clientPrivileges: () => false,
       accessTokenExpiresIn: 15 * 60,
       refreshTokenExpiresIn: 30 * 24 * 60 * 60,
-      customAccessTokenClaims: async ({ user: tokenUser, metadata, resource }) => {
+      customAccessTokenClaims: async ({ user: tokenUser, metadata, resources }) => {
         const clientId = typeof metadata?.clientId === "string" ? metadata.clientId : undefined;
-        if (resource !== directoryAudience || !tokenUser?.id || !clientId || !(await hasLiveAppAccess(tokenUser.id, clientId))) {
+        const targetsDirectory = resources?.length === 1 && resources[0] === directoryAudience;
+        if (!targetsDirectory || !tokenUser?.id || !clientId || !(await hasLiveAppAccess(tokenUser.id, clientId))) {
           await recordAuditEvent({
             eventType: "oauth.token.denied",
             actor: "oauth-provider",
             personId: tokenUser?.id,
             clientId,
-            detail: { reason: resource === directoryAudience ? "person_or_app_access_inactive" : "unexpected_resource" },
+            detail: { reason: targetsDirectory ? "person_or_app_access_inactive" : "unexpected_resource" },
           });
           throw accessDenied("This person does not have active access to the requested application");
         }
