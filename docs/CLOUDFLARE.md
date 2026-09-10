@@ -1,0 +1,114 @@
+# Cloudflare deployment
+
+## Runtime layout
+
+| Component | Hosting | Entrypoint / build |
+| --- | --- | --- |
+| SMZ Identity, Google callback, OIDC, directory API | Worker `smz-auth` | `packages/auth-server/src/worker.ts` |
+| App A | Cloudflare Pages | `npm run build:app-a`, output `apps/vite-app/dist` |
+| App B confidential OIDC client | Worker `smz-app-b` | `apps/express-app/src/worker.ts` |
+| Auth, directory, App B sessions | PlanetScale **Postgres** through Hyperdrive | Existing Drizzle PostgreSQL migrations |
+
+App B's directory/package name remains `apps/express-app` / `@smz/express-app` and its registered client ID remains `express-app`. Its HTTP implementation is now Hono, shared by the Node and Worker entrypoints. Both Workers create their database pools inside each request and close them after processing. Transactions remain PostgreSQL transactions. No database objects or sockets are shared across Worker requests.
+
+App B stores only an opaque, random session ID in a Secure, HttpOnly, SameSite=Lax `__Host-` cookie. IDs are hashed in PostgreSQL; session payloads containing OAuth tokens are AES-GCM encrypted using `APP_B_COOKIE_SECRET`. The one-hour session expiry is absolute. Login and callback rotate IDs; a PostgreSQL transaction/advisory lock serializes operations for each existing session across isolates. An hourly Worker schedule removes expired sessions. Rotating the cookie secret invalidates existing App B sessions.
+
+## One-time infrastructure setup
+
+1. Choose three HTTPS origins: identity, App A, and App B. Worker custom domains must belong to a zone in the target Cloudflare account. Add App A's custom domain in the Pages project and wait for TLS to become active.
+2. Create a PlanetScale **Postgres** database and production branch, then obtain its primary connection credentials. Do not use the PlanetScale MySQL/Vitess product or serverless MySQL driver. Create the Hyperdrive configuration using the PlanetScale connection details and **disable query caching**. Auth admission and revocation depend on fresh reads. The release workflow verifies `caching.disabled` through Cloudflare's API.
+3. Create a Cloudflare Pages **Direct Upload** project with production branch `main`. Do not enable a second Git integration deployment path: GitHub Actions publishes it from the validated commit.
+4. Configure the GitHub `production` environment with the variables and secrets below. Restrict deployment to `main` with branch/environment protection appropriate to the repository.
+5. Register the exact Google Web OAuth redirect `${AUTH_ISSUER}/callback/google`. Only `openid profile email` is requested. Existing users must have pre-approved, exact verified Google emails.
+6. Prepare and review the production directory seed. Change every client public origin, callback and post-logout URL to match the hosted origins. The helper below creates a new ignored file without overwriting an existing one:
+
+   ```sh
+   APP_A_ORIGIN=https://app-a.your-domain.tld APP_B_ORIGIN=https://app-b.your-domain.tld \
+     node scripts/prepare-seed.mjs packages/auth-server/seeds/directory.seed.private.json \
+     packages/auth-server/seeds/production.private.json
+   ```
+
+   Use real approved directory data, not the committed example adults. Run migrations and the seed CLI against the direct PlanetScale connection with the production issuer, both application origins, and the same `APP_B_CLIENT_SECRET` used by App B. Set `NODE_ENV=production` and all auth secrets so configuration validation runs. Keep credentials in the environment or a local ignored file; never commit them. The seed CLI defaults to dry-run; explicitly supply `--apply` after reviewing its summary. Directory seeding is an operator bootstrap/update action and is not repeated automatically by deployments.
+
+   ```sh
+   npm run db:migrate
+   npm run directory:seed -- --file packages/auth-server/seeds/production.private.json
+   npm run directory:seed -- --file packages/auth-server/seeds/production.private.json --apply
+   ```
+
+   Changing the issuer changes the token audience and identity issuer. Existing sessions/tokens must be replaced by fresh logins, and consuming applications must use the new `(issuer, sub)` mapping deliberately.
+
+### GitHub environment variables
+
+| Variable | Value |
+| --- | --- |
+| `CLOUDFLARE_ACCOUNT_ID` | Target account ID |
+| `CLOUDFLARE_HYPERDRIVE_ID` | Hyperdrive configuration ID with caching disabled |
+| `AUTH_ISSUER` | `https://<identity-domain>/api/auth`, no trailing slash |
+| `APP_A_ORIGIN` | App A HTTPS origin, no trailing slash |
+| `APP_B_ORIGIN` | App B HTTPS origin, no trailing slash |
+| `PAGES_PROJECT_NAME` | Existing Direct Upload Pages project |
+
+### GitHub environment secrets
+
+| Secret | Purpose |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Workers Scripts Edit, Pages Edit, Hyperdrive Read, and permissions for the target custom domains/zone |
+| `PLANETSCALE_DATABASE_URL` | Direct primary Postgres connection with TLS, used only by migrations |
+| `BETTER_AUTH_SECRET` | Random secret, at least 32 characters |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google Web OAuth credentials |
+| `APP_B_CLIENT_SECRET` | Random secret, at least 32 characters; must match seeded client |
+| `APP_B_COOKIE_SECRET` | Independent random secret, at least 32 characters |
+
+Use verified TLS for the direct database connection. Hyperdrive holds the runtime database credentials; neither Worker receives `PLANETSCALE_DATABASE_URL`, and the frontend receives no secrets. The Pages build gets only `VITE_AUTH_ISSUER` and `VITE_APP_B_ORIGIN`.
+
+## Release path
+
+`.github/workflows/ci.yml` validates pull requests and pushes to `main`. It runs type checks, unit tests, all builds, Worker dry-run bundles, migrations on a fresh PostgreSQL database, OIDC/directory tests, and durable-session tests.
+
+Only a push to `main` deploys. After validation, it generates configs from GitHub environment variables, verifies Hyperdrive caching, prepares secrets, runs migrations through the direct PlanetScale connection, builds App A with production values, deploys both Workers and Pages, then checks Worker health and OIDC discovery. No manual `workflow_dispatch` or `npm run deploy` path is provided. Infrastructure/bootstrap commands above do not publish application code.
+
+The checked-in Wrangler files contain explicit placeholders for dry-run validation. `npm run cloudflare:configure` rejects missing or placeholder production configuration. Generated files live in ignored `.wrangler/`; CI passes secret files to Wrangler and deletes them even on failure. Keep Worker secrets stable across normal releases.
+
+The deployment is sequential, not atomic across three services. Use additive migrations and backwards-compatible protocol changes. If publication fails partway, inspect the GitHub run and correct/revert through another commit. Do not roll back PostgreSQL by deleting migration records or replaying old schema snapshots.
+
+## Migration and operations notes
+
+`0005_amusing_spencer_smythe.sql` only adds the App B session table/index. Earlier migrations are retained unchanged by this conversion. Older branches of this repository rewrote migration history before this change: an existing database with a different Drizzle journal needs a schema/history reconciliation and backup before migration. Validate on a PlanetScale development branch first. A fresh database can apply this repository's complete migration chain.
+
+Before exposing production, configure PlanetScale backups/recovery, separate staging resources, secret rotation ownership, and Worker monitoring. Test a real Google login in both clients, refresh, CORS from the exact Pages origin, and coordinated logout in both directions. Revoke a user's app access and confirm the next directory request fails. CI health/discovery checks and local runtime checks cannot replace those live Google/browser checks.
+
+## Local checks
+
+```sh
+npm ci
+npm run typecheck
+npm test
+npm run build
+npm run cloudflare:check
+```
+
+For Node development, `npm run dev` still runs the three services. Both Auth and App B now require the migrated local PostgreSQL database. For isolated integration tests, set `DATABASE_URL` to a disposable database, run migrations, then:
+
+```sh
+npm run test:integration -w @smz/auth-server
+RUN_DB_TESTS=true npx vitest run apps/express-app/tests --no-file-parallelism
+```
+
+Worker bindings use strict production configuration even under `wrangler dev`. To test locally in workerd, use an ignored config with HTTPS test origins, test-only secrets, and the Hyperdrive `localConnectionString` pointed at a disposable database. That checks runtime compatibility, not real Hyperdrive connectivity. The committed example URLs/secrets are deliberately rejected at runtime.
+
+## References
+
+- [Cloudflare: PlanetScale Postgres with Hyperdrive](https://developers.cloudflare.com/hyperdrive/examples/connect-to-postgres/postgres-database-providers/planetscale-postgres/)
+- [Cloudflare: PostgreSQL drivers and request-scoped connections](https://developers.cloudflare.com/hyperdrive/examples/connect-to-postgres/)
+- [Cloudflare: disabling query caching](https://developers.cloudflare.com/hyperdrive/concepts/query-caching/)
+- [PlanetScale: Postgres and Cloudflare Workers](https://planetscale.com/docs/postgres/tutorials/planetscale-postgres-cloudflare-workers)
+
+## Conversion validation (2026-09-11)
+
+- Workspace type checks and all three application builds passed.
+- 13 unit tests and 13 integration tests passed on a disposable PostgreSQL 17 database; all migrations applied successfully from an empty database.
+- Both Worker bundles passed Wrangler dry-run compilation.
+- Both Workers ran under local workerd with database health checks; Auth discovery/sign-in and five concurrent Auth database requests passed. App B's anonymous/protected/logout routes passed.
+- App A and App B rendered in a browser. Pages uses its default SPA fallback (no top-level `404.html` or callback redirect rules), preserving the callback pathname and query while serving the SPA document. A callback without OAuth state was correctly rejected by the frontend.
+- Workflow YAML and production-config generation were checked. No live Cloudflare/PlanetScale publication, real Hyperdrive connection, or complete Google sign-in/refresh/logout browser cycle was performed. Production identifiers, domains, credentials and bootstrap remain operator inputs.

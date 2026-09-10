@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import type { User } from "oidc-client-ts";
 
 import { auth } from "./auth";
+import { authOrigin, appBOrigin, directoryResource } from "./config";
 import "./styles.css";
 
 const globalLogoutChannel = new BroadcastChannel("smz-global-logout");
@@ -39,7 +40,7 @@ function App() {
         setAccessContext(undefined);
         return;
       }
-      const response = await fetch("http://localhost:3000/api/directory/v1/me/access-context", {
+      const response = await fetch(`${directoryResource}/me/access-context`, {
         headers: { Authorization: `Bearer ${currentUser.access_token}` },
       });
       if (!response.ok) throw new Error(`Directory access failed (${response.status})`);
@@ -52,7 +53,7 @@ function App() {
           const returnTo = new URLSearchParams(window.location.search).get("returnTo");
           globalLogoutChannel.postMessage("logout");
           await clearLocalAuthentication();
-          window.location.replace(returnTo === "app-b" ? "http://localhost:4000/" : "/");
+          window.location.replace(returnTo === "app-b" ? `${appBOrigin}/` : "/");
           return;
         }
         if (window.location.pathname === "/callback") {
@@ -99,7 +100,7 @@ function App() {
       // Continue through the logout chain even if a token was already revoked.
     }
     await auth.removeUser();
-    window.location.assign("http://localhost:3000/logout-all/app-a");
+    window.location.assign(`${authOrigin}/logout-all/app-a`);
   }
 
   return (
@@ -156,7 +157,7 @@ function App() {
         ) : (
           <button onClick={() => void auth.signinRedirect({ nonce: crypto.randomUUID() })}>Sign in through SMZ Auth</button>
         )}
-        <a href="http://localhost:4000">Open Express App B <span>↗</span></a>
+        <a href={appBOrigin}>Open App B <span>↗</span></a>
       </div>
     </main>
   );

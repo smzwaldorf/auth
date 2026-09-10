@@ -36,6 +36,13 @@
       "when": 1788538940375,
       "tag": "0004_fix_oidc_resource_scopes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789059022882,
+      "tag": "0005_amusing_spencer_smythe",
+      "breakpoints": true
     }
   ]
 }
