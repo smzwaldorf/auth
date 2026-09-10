@@ -4,7 +4,7 @@ import process from "node:process";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { config, directoryAudience, publicPortForHost } from "../config.js";
+import { config, directoryAudience } from "../config.js";
 import {
   account,
   appAccess,
@@ -12,7 +12,6 @@ import {
   auditEvents,
   classMemberships,
   classes,
-  developmentLoginAccounts,
   families,
   familyMemberships,
   loginInvitations,
@@ -31,25 +30,6 @@ import { normalizeEmail, type DirectorySeed } from "./model.js";
 
 function hashClientSecret(value: string): string {
   return createHash("sha256").update(value).digest("base64url");
-}
-
-function registeredClientUris(uris: string[]): string[] {
-  const tailnetTargets = [
-    ...(config.TAILSCALE_HOST ? [{ host: config.TAILSCALE_HOST, protocol: "https:" }] : []),
-  ];
-  if (!tailnetTargets.length) return uris;
-  const tailnetUris = uris.flatMap((uri) => tailnetTargets.map((target) => {
-    const destination = new URL(uri);
-    if (destination.hostname === "localhost" || destination.hostname === "127.0.0.1") {
-      destination.hostname = target.host;
-      destination.protocol = target.protocol;
-      if (target.host === config.TAILSCALE_HOST) {
-        destination.port = String(publicPortForHost(target.host, Number(destination.port || (destination.protocol === "https:" ? 443 : 80))));
-      }
-    }
-    return destination.toString();
-  }));
-  return [...new Set([...uris, ...tailnetUris])];
 }
 
 function seedAuditId(seed: DirectorySeed): string {
@@ -110,15 +90,6 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
               updatedAt: now,
             },
           });
-      }
-
-      if (person.developmentLogin) {
-        await tx
-          .insert(developmentLoginAccounts)
-          .values({ personId: person.id, label: person.developmentLogin.label, enabled: true, updatedAt: now })
-          .onConflictDoUpdate({ target: developmentLoginAccounts.personId, set: { label: person.developmentLogin.label, enabled: true, updatedAt: now } });
-      } else {
-        await tx.delete(developmentLoginAccounts).where(eq(developmentLoginAccounts.personId, person.id));
       }
     }
 
@@ -200,7 +171,10 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
         name: "SMZ Directory API",
         accessTokenTtl: 15 * 60,
         refreshTokenTtl: 30 * 24 * 60 * 60,
-        allowedScopes: ["directory:access"],
+        // Better Auth applies this list as an intersection, so it must retain
+        // the OIDC scopes as well as the directory API permission. Otherwise
+        // `openid` is stripped and no ID token can be issued.
+        allowedScopes: ["openid", "profile", "email", "directory:access", "offline_access"],
         dpopBoundAccessTokensRequired: false,
         disabled: false,
         createdAt: now,
@@ -212,15 +186,13 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
           name: "SMZ Directory API",
           accessTokenTtl: 15 * 60,
           refreshTokenTtl: 30 * 24 * 60 * 60,
-          allowedScopes: ["directory:access"],
+          allowedScopes: ["openid", "profile", "email", "directory:access", "offline_access"],
           disabled: false,
           updatedAt: now,
         },
       });
 
     for (const application of seed.applications) {
-      const redirectUris = registeredClientUris(application.redirectUris);
-      const postLogoutRedirectUris = registeredClientUris(application.postLogoutRedirectUris);
       const rawSecret = application.clientSecretEnv
         ? process.env[application.clientSecretEnv] ?? (application.clientSecretEnv === "APP_B_CLIENT_SECRET" ? config.APP_B_CLIENT_SECRET : undefined)
         : undefined;
@@ -241,8 +213,8 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
           createdAt: now,
           updatedAt: now,
           name: application.displayName,
-          redirectUris,
-          postLogoutRedirectUris,
+          redirectUris: application.redirectUris,
+          postLogoutRedirectUris: application.postLogoutRedirectUris,
           tokenEndpointAuthMethod: application.clientType === "public" ? "none" : "client_secret_post",
           applicationType: "web",
           grantTypes: ["authorization_code", "refresh_token"],
@@ -262,8 +234,8 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
             scopes: application.scopes,
             updatedAt: now,
             name: application.displayName,
-            redirectUris,
-            postLogoutRedirectUris,
+            redirectUris: application.redirectUris,
+            postLogoutRedirectUris: application.postLogoutRedirectUris,
             tokenEndpointAuthMethod: application.clientType === "public" ? "none" : "client_secret_post",
             applicationType: "web",
             grantTypes: ["authorization_code", "refresh_token"],

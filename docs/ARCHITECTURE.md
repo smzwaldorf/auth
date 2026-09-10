@@ -49,9 +49,9 @@ An authenticating adult’s `directory.people.id`, Better Auth `auth.user.id`, a
 - Client secrets and OAuth tokens are stored hashed or encrypted; real seed data and `.env` are ignored.
 - App/person lifecycle is checked at token issue/refresh and at every directory request.
 
-Better Auth and its OAuth Provider run on the patched 1.7.2 package family. The directory API is a persisted OAuth resource, every allowed client has an explicit resource link, and authorization rejects unregistered resources before code or token issuance. The directory API also verifies issuer, canonical audience URL, scope, authorized party, and live person/application access.
+Better Auth and its OAuth Provider use version 1.7.2. The directory API is a persisted OAuth resource, and every allowed client has an explicit resource link. Token issuance rejects other resources. The directory API verifies issuer, canonical audience URL, scope, authorized party, and live person/application access.
 
-Production startup requires HTTPS and explicit non-placeholder secrets. App B sessions are durable in PostgreSQL, and the operations runbook covers deployment and backup/restore. A production release still requires operator-provisioned secret rotation, monitoring, and a manual real-Google and magic-link smoke test.
+Production still needs HTTPS, managed secret/key rotation, durable application session storage, database backups, monitoring, and a manual real-Google release smoke.
 
 ## Future `email-cms` contract
 

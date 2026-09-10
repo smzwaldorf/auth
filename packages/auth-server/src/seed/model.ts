@@ -20,9 +20,6 @@ const personSchema = z.object({
       expiresAt: z.string().datetime().optional(),
     })
     .optional(),
-  developmentLogin: z
-    .object({ label: z.string().min(1) })
-    .optional(),
 });
 
 const effectiveMembership = {
@@ -121,11 +118,6 @@ export function validateDirectorySeed(input: unknown): DirectorySeed {
     }
     if (person.kind === "student" && !person.roles.includes("student")) issues.push(`student ${person.id} must have the student role`);
     if (person.kind === "adult" && person.roles.includes("student")) issues.push(`adult ${person.id} cannot have the student role`);
-    if (person.developmentLogin && person.kind !== "adult") issues.push(`student ${person.id} cannot be a development login`);
-    if (person.developmentLogin && person.status !== "active") issues.push(`disabled adult ${person.id} cannot be a development login`);
-    if (person.developmentLogin && !person.roles.some((role) => role === "parent" || role === "teacher")) {
-      issues.push(`development login ${person.id} must be a parent or teacher`);
-    }
   }
 
   for (const family of seed.families) {

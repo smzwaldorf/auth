@@ -58,8 +58,7 @@ export async function hasLiveAppAccess(personId: string, clientId: string): Prom
     .from(people)
     .innerJoin(appAccess, and(eq(appAccess.personId, people.id), eq(appAccess.clientId, clientId)))
     .innerJoin(applications, eq(applications.clientId, appAccess.clientId))
-    .innerJoin(personRoles, eq(personRoles.personId, people.id))
-    .where(and(eq(people.id, personId), inArray(personRoles.role, ["parent", "teacher"])))
+    .where(eq(people.id, personId))
     .limit(1);
   return row?.kind === "adult" && row.personStatus === "active" && row.accessStatus === "active" && row.appEnabled;
 }

@@ -4,8 +4,8 @@ export function parseLogoutReturn(value: string | undefined): LogoutReturn | und
   return value === "app-a" || value === "app-b" ? value : undefined;
 }
 
-export function appBLogoutUrl(appBOrigin: string, returnTo: LogoutReturn): string {
-  const destination = new URL("/logout/local", appBOrigin);
+export function appBLogoutUrl(returnTo: LogoutReturn): string {
+  const destination = new URL("http://localhost:4000/logout/local");
   destination.searchParams.set("returnTo", returnTo);
   return destination.toString();
 }

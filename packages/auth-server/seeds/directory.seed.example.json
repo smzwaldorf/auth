@@ -7,30 +7,10 @@
       "id": "10000000-0000-4000-8000-000000000001",
       "kind": "adult",
       "displayName": "Example Guardian Teacher",
-      "loginEmail": "teacher@example.com",
+      "loginEmail": "approved.guardian@example.invalid",
       "status": "active",
       "roles": ["parent", "teacher"],
-      "invitation": { "id": "20000000-0000-4000-8000-000000000001", "status": "pending" },
-      "developmentLogin": { "label": "Example guardian / teacher" }
-    },
-    {
-      "id": "10000000-0000-4000-8000-000000000003",
-      "kind": "adult",
-      "displayName": "Example Parent",
-      "loginEmail": "parent1@example.com",
-      "status": "active",
-      "roles": ["parent"],
-      "invitation": { "id": "20000000-0000-4000-8000-000000000003", "status": "pending" },
-      "developmentLogin": { "label": "Example parent" }
-    },
-    {
-      "id": "10000000-0000-4000-8000-000000000004",
-      "kind": "adult",
-      "displayName": "Harry World",
-      "loginEmail": "harryworld@gmail.com",
-      "status": "active",
-      "roles": ["parent", "admin"],
-      "invitation": { "id": "20000000-0000-4000-8000-000000000004", "status": "activated" }
+      "invitation": { "id": "20000000-0000-4000-8000-000000000001", "status": "pending" }
     },
     {
       "id": "10000000-0000-4000-8000-000000000002",
@@ -88,31 +68,15 @@
       "displayName": "Express App B",
       "clientType": "confidential",
       "clientSecretEnv": "APP_B_CLIENT_SECRET",
+      "publicOrigin": "http://localhost:4000",
       "redirectUris": ["http://localhost:4000/auth/callback"],
       "postLogoutRedirectUris": ["http://localhost:4000/"],
-      "scopes": ["openid", "profile", "email", "directory:access", "offline_access"],
-      "enabled": true
-    },
-    {
-      "clientId": "email-cms",
-      "displayName": "Email CMS",
-      "clientType": "public",
-      "publicOrigin": "http://localhost:5173",
-      "redirectUris": ["http://localhost:5173/auth/callback"],
-      "postLogoutRedirectUris": ["http://localhost:5173/login"],
       "scopes": ["openid", "profile", "email", "directory:access", "offline_access"],
       "enabled": true
     }
   ],
   "appAccess": [
     { "personId": "10000000-0000-4000-8000-000000000001", "clientId": "vite-app", "status": "active" },
-    { "personId": "10000000-0000-4000-8000-000000000001", "clientId": "express-app", "status": "active" },
-    { "personId": "10000000-0000-4000-8000-000000000001", "clientId": "email-cms", "status": "active" },
-    { "personId": "10000000-0000-4000-8000-000000000003", "clientId": "vite-app", "status": "active" },
-    { "personId": "10000000-0000-4000-8000-000000000003", "clientId": "express-app", "status": "active" },
-    { "personId": "10000000-0000-4000-8000-000000000003", "clientId": "email-cms", "status": "active" },
-    { "personId": "10000000-0000-4000-8000-000000000004", "clientId": "vite-app", "status": "active" },
-    { "personId": "10000000-0000-4000-8000-000000000004", "clientId": "express-app", "status": "active" },
-    { "personId": "10000000-0000-4000-8000-000000000004", "clientId": "email-cms", "status": "active" }
+    { "personId": "10000000-0000-4000-8000-000000000001", "clientId": "express-app", "status": "active" }
   ]
 }

@@ -15,17 +15,6 @@ import {
 import { oauthClient } from "./auth-schema.js";
 
 export const directorySchema = pgSchema("directory");
-export const applicationSchema = pgSchema("application");
-
-export const expressSessions = applicationSchema.table(
-  "express_sessions",
-  {
-    sid: text("sid").primaryKey(),
-    sess: jsonb("sess").$type<Record<string, unknown>>().notNull(),
-    expire: timestamp("expire", { precision: 6 }).notNull(),
-  },
-  (table) => [index("express_sessions_expire_idx").on(table.expire)],
-);
 
 export const personKind = directorySchema.enum("person_kind", ["adult", "student"]);
 export const lifecycleStatus = directorySchema.enum("lifecycle_status", ["active", "disabled"]);
@@ -178,20 +167,6 @@ export const loginInvitations = directorySchema.table(
     uniqueIndex("login_invitations_email_unique").on(table.normalizedEmail),
     uniqueIndex("login_invitations_person_unique").on(table.personId),
   ],
-);
-
-// This is an allowlist, not an authentication bypass.  It exists solely to
-// make local and test OIDC journeys repeatable without Google or email.
-export const developmentLoginAccounts = directorySchema.table(
-  "development_login_accounts",
-  {
-    personId: uuid("person_id")
-      .primaryKey()
-      .references(() => people.id, { onDelete: "cascade" }),
-    label: text("label").notNull(),
-    enabled: boolean("enabled").default(true).notNull(),
-    ...timestamps,
-  },
 );
 
 export const auditEvents = directorySchema.table(

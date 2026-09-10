@@ -20,9 +20,9 @@ export const auth = betterAuth({
       consentPage: "/consent",
       scopes: ["openid", "profile", "email", "directory:access", "offline_access"],
       resources: [{
-        identifier: "https://identity.example.test/api/directory/v1",
+        identifier: "http://localhost:3000/api/directory/v1",
         name: "SMZ Directory API",
-        allowedScopes: ["directory:access"],
+        allowedScopes: ["openid", "profile", "email", "directory:access", "offline_access"],
       }],
       silenceWarnings: { oauthAuthServerConfig: true },
     }),

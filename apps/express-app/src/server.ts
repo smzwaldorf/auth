@@ -1,24 +1,20 @@
+import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
-import connectPgSimple from "connect-pg-simple";
+import dotenv from "dotenv";
 import express, { type NextFunction, type Request, type Response } from "express";
 import session from "express-session";
 import * as oauth from "openid-client";
 
-import { appConfig } from "./config.js";
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+dotenv.config({ path: path.join(projectRoot, ".env") });
 
-const issuer = appConfig.issuer;
+const issuer = new URL(process.env.AUTH_ISSUER ?? "http://localhost:3000/api/auth");
 const directoryResource = new URL("/api/directory/v1", issuer.origin).href.replace(/\/$/, "");
 const clientId = "express-app";
-const clientSecret = appConfig.clientSecret;
-const tailnetHost = appConfig.tailnetHost;
-const tailnetIp = appConfig.tailnetIp;
-const tailnetPorts = appConfig.tailnetPorts;
-const publicHosts = new Set(
-  ["localhost", "127.0.0.1", issuer.hostname, tailnetHost, tailnetIp]
-    .filter((host): host is string => Boolean(host))
-    .map((host) => host.toLowerCase()),
-);
+const clientSecret = process.env.APP_B_CLIENT_SECRET ?? "local-app-b-client-secret-change-me";
+const redirectUri = "http://localhost:4000/auth/callback";
 
 type AuthUser = {
   sub: string;
@@ -49,8 +45,8 @@ declare module "express-session" {
 let configurationPromise: Promise<oauth.Configuration> | undefined;
 function configuration(): Promise<oauth.Configuration> {
   configurationPromise ??= oauth.discovery(issuer, clientId, clientSecret, undefined, {
-    // Raw Tailscale IP development uses HTTP. Production still requires HTTPS.
-    execute: issuer.protocol === "http:" && !appConfig.isProduction ? [oauth.allowInsecureRequests] : [],
+    // openid-client intentionally requires HTTPS; this exception is localhost-only.
+    execute: issuer.hostname === "localhost" ? [oauth.allowInsecureRequests] : [],
   });
   return configurationPromise;
 }
@@ -61,33 +57,9 @@ function escapeHtml(value: unknown): string {
   })[character] ?? character);
 }
 
-function publicOrigin(req: Request, port: number): string {
-  const host = req.hostname.toLowerCase();
-  if (!publicHosts.has(host)) throw new Error(`Unsupported public host: ${host}`);
-  const destination = new URL("http://localhost");
-  destination.protocol = host === tailnetHost ? "https:" : req.protocol;
-  destination.hostname = host;
-  destination.port = String(host === tailnetHost ? (port === 5173 ? tailnetPorts.appA : port === 4000 ? tailnetPorts.appB : tailnetPorts.auth) : port);
-  return destination.origin;
-}
-
-function redirectUri(req: Request): string {
-  return new URL("/auth/callback", oidcOrigin(req, 4000)).href;
-}
-
-function oidcOrigin(req: Request, port: number): string {
-  if (req.hostname === tailnetIp && tailnetHost) {
-    const destination = new URL(`https://${tailnetHost}`);
-    destination.port = String(port === 5173 ? tailnetPorts.appA : tailnetPorts.appB);
-    return destination.origin;
-  }
-  return publicOrigin(req, port);
-}
-
-function page(req: Request, user?: AuthUser, accessContext?: AccessContext, accessError?: string): string {
+function page(user?: AuthUser, accessContext?: AccessContext, accessError?: string): string {
   const authenticated = Boolean(user);
   const signedIn = Boolean(user && accessContext?.access === "active");
-  const viteAppOrigin = publicOrigin(req, 5173);
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -135,7 +107,7 @@ function page(req: Request, user?: AuthUser, accessContext?: AccessContext, acce
         <section class="panel"><h2>Server-side authentication</h2><p>The authorization code is redeemed on this Express server. Browser requests then use an application session cookie.</p></section>`}
       <div class="actions">
         <a href="${authenticated ? "/logout" : "/login"}">${authenticated ? "Sign out" : "Sign in through SMZ Auth"}</a>
-        <a class="secondary" href="${viteAppOrigin}">Open Vite App A ↗</a>
+        <a class="secondary" href="http://localhost:5173">Open Vite App A ↗</a>
         ${signedIn ? '<a class="secondary" href="/protected">Open protected route</a>' : ""}
       </div>
       <script>
@@ -149,27 +121,19 @@ function page(req: Request, user?: AuthUser, accessContext?: AccessContext, acce
 
 const app = express();
 app.set("trust proxy", 1);
-const PgSessionStore = connectPgSimple(session);
-const sessionStore = new PgSessionStore({
-  conString: appConfig.databaseUrl,
-  schemaName: "application",
-  tableName: "express_sessions",
-  createTableIfMissing: false,
-});
 app.use(
   session({
     name: "smz.app-b",
-    secret: appConfig.cookieSecret,
-    store: sessionStore,
+    secret: process.env.APP_B_COOKIE_SECRET ?? "local-app-b-cookie-secret-change-me",
     resave: false,
     saveUninitialized: false,
-    cookie: { httpOnly: true, sameSite: "lax", secure: appConfig.isProduction, maxAge: 60 * 60 * 1000 },
+    cookie: { httpOnly: true, sameSite: "lax", secure: false, maxAge: 60 * 60 * 1000 },
   }),
 );
 
 async function fetchAccessContext(req: Request): Promise<{ context?: AccessContext; error?: string }> {
   async function request(accessToken: string) {
-    return fetch(new URL("/api/directory/v1/me/access-context", issuer.origin), {
+    return fetch("http://localhost:3000/api/directory/v1/me/access-context", {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
   }
@@ -208,7 +172,7 @@ async function clearLocalSession(req: Request): Promise<void> {
 app.get("/", async (req, res, next) => {
   try {
     const access = req.session.user ? await fetchAccessContext(req) : {};
-    res.type("html").send(page(req, req.session.user, access.context, access.error));
+    res.type("html").send(page(req.session.user, access.context, access.error));
   } catch (error) {
     next(error);
   }
@@ -225,7 +189,7 @@ app.get("/login", async (req, res, next) => {
     const nonce = oauth.randomNonce();
     req.session.oidcFlow = { codeVerifier, state, nonce };
     const destination = oauth.buildAuthorizationUrl(config, {
-      redirect_uri: redirectUri(req),
+      redirect_uri: redirectUri,
       response_type: "code",
       scope: "openid profile email directory:access offline_access",
       resource: directoryResource,
@@ -245,7 +209,7 @@ app.get("/auth/callback", async (req, res, next) => {
     const flow = req.session.oidcFlow;
     if (!flow) throw new Error("Login session expired");
     const config = await configuration();
-    const currentUrl = new URL(req.originalUrl, publicOrigin(req, 4000));
+    const currentUrl = new URL(req.originalUrl, "http://localhost:4000");
     const tokens = await oauth.authorizationCodeGrant(
       config,
       currentUrl,
@@ -260,13 +224,17 @@ app.get("/auth/callback", async (req, res, next) => {
     const claims = tokens.claims();
     if (!claims?.sub) throw new Error("No subject claim returned by auth server");
     const userInfo = await oauth.fetchUserInfo(config, tokens.access_token, claims.sub);
-    req.session.user = {
+    const user: AuthUser = {
       sub: claims.sub,
       name: typeof userInfo.name === "string" ? userInfo.name : undefined,
       email: typeof userInfo.email === "string" ? userInfo.email : undefined,
       picture: typeof userInfo.picture === "string" ? userInfo.picture : undefined,
       iss: claims.iss,
     };
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate((error) => error ? reject(error) : resolve());
+    });
+    req.session.user = user;
     req.session.idToken = tokens.id_token;
     req.session.accessToken = tokens.access_token;
     req.session.refreshToken = tokens.refresh_token;
@@ -297,7 +265,7 @@ app.get("/protected", async (req, res, next) => {
 app.get("/logout", async (req, res, next) => {
   try {
     await clearLocalSession(req);
-    res.redirect(new URL("/logout-all/app-b", issuer.origin).href);
+    res.redirect("http://localhost:3000/logout-all/app-b");
   } catch (error) {
     next(error);
   }
@@ -311,7 +279,7 @@ app.get("/logout/local", async (req, res, next) => {
       return;
     }
     await clearLocalSession(req);
-    const destination = new URL("/logout-complete", publicOrigin(req, 5173));
+    const destination = new URL("http://localhost:5173/logout-complete");
     destination.searchParams.set("returnTo", returnTo);
     res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Signing out…</title></head><body><p>Signing out of all SMZ applications…</p><script>
       try {
@@ -332,13 +300,4 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: error instanceof Error ? error.message : "Unknown application error" });
 });
 
-const server = app.listen(appConfig.listenPort, "0.0.0.0", () => {
-  console.log(`Express App B listening on http://0.0.0.0:${appConfig.listenPort}`);
-});
-
-function shutdown() {
-  server.close(() => sessionStore.close());
-}
-
-process.once("SIGINT", shutdown);
-process.once("SIGTERM", shutdown);
+app.listen(4000, "127.0.0.1", () => console.log("Express App B listening on http://localhost:4000"));
