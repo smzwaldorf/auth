@@ -21,7 +21,14 @@ for (const [name, source, hostname] of [["auth", "packages/auth-server", new URL
   config.account_id = account;
   config.vars = vars;
   config.hyperdrive = [{ binding: "HYPERDRIVE", id }];
-  config.routes = [{ pattern: hostname, custom_domain: true }];
+  if (hostname.endsWith(".workers.dev")) {
+    if (!new RegExp(`^${config.name}\\.[a-z0-9-]+\\.workers\\.dev$`).test(hostname)) throw new Error(`The ${name} workers.dev hostname must match Worker name ${config.name}`);
+    config.workers_dev = true;
+    delete config.routes;
+  } else {
+    config.workers_dev = false;
+    config.routes = [{ pattern: hostname, custom_domain: true }];
+  }
   await fs.writeFile(`.wrangler/deploy/${name}.json`, JSON.stringify(config, null, 2));
 }
 console.log("Generated production Worker configurations.");

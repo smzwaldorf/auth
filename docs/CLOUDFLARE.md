@@ -15,7 +15,7 @@ App B stores only an opaque, random session ID in a Secure, HttpOnly, SameSite=L
 
 ## One-time infrastructure setup
 
-1. Choose three HTTPS origins: identity, App A, and App B. Worker custom domains must belong to a zone in the target Cloudflare account. Add App A's custom domain in the Pages project and wait for TLS to become active.
+1. Choose three HTTPS origins: identity, App A, and App B. Cloudflare-provided domains are supported: `smz-auth.<account-subdomain>.workers.dev` for Auth, `smz-app-b.<account-subdomain>.workers.dev` for App B, and `<pages-project>.pages.dev` for App A. The generator enables `workers_dev` and omits custom-domain routes for these Worker hostnames. Custom Worker domains must belong to a zone in the target account; optional Pages custom domains must be configured separately.
 2. Create a PlanetScale **Postgres** database and production branch, then obtain its primary connection credentials. Do not use the PlanetScale MySQL/Vitess product or serverless MySQL driver. Create the Hyperdrive configuration using the PlanetScale connection details and **disable query caching**. Auth admission and revocation depend on fresh reads. The release workflow verifies `caching.disabled` through Cloudflare's API.
 3. Create a Cloudflare Pages **Direct Upload** project with production branch `main`. Do not enable a second Git integration deployment path: GitHub Actions publishes it from the validated commit.
 4. Configure the GitHub `production` environment with the variables and secrets below. Restrict deployment to `main` with branch/environment protection appropriate to the repository.
@@ -44,7 +44,7 @@ App B stores only an opaque, random session ID in a Secure, HttpOnly, SameSite=L
 | --- | --- |
 | `CLOUDFLARE_ACCOUNT_ID` | Target account ID |
 | `CLOUDFLARE_HYPERDRIVE_ID` | Hyperdrive configuration ID with caching disabled |
-| `AUTH_ISSUER` | `https://<identity-domain>/api/auth`, no trailing slash |
+| `AUTH_ISSUER` | `https://smz-auth.<account-subdomain>.workers.dev/api/auth` (or a custom domain), no trailing slash |
 | `APP_A_ORIGIN` | App A HTTPS origin, no trailing slash |
 | `APP_B_ORIGIN` | App B HTTPS origin, no trailing slash |
 | `PAGES_PROJECT_NAME` | Existing Direct Upload Pages project |
@@ -53,7 +53,7 @@ App B stores only an opaque, random session ID in a Secure, HttpOnly, SameSite=L
 
 | Secret | Purpose |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | Workers Scripts Edit, Pages Edit, Hyperdrive Read, and permissions for the target custom domains/zone |
+| `CLOUDFLARE_API_TOKEN` | Workers Scripts Edit, Pages Edit, Hyperdrive Read, and permissions for the target custom domains/zone only when using custom domains |
 | `PLANETSCALE_DATABASE_URL` | Direct primary Postgres connection with TLS, used only by migrations |
 | `BETTER_AUTH_SECRET` | Random secret, at least 32 characters |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google Web OAuth credentials |
