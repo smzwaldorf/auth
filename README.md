@@ -2,7 +2,7 @@
 
 A first-party identity service for one school, with Node development entrypoints and Cloudflare deployment adapters: Pages for App A, Workers for Auth and App B, and PlanetScale Postgres through Hyperdrive.
 
-Auth and App B share the `smz-auth` logical database and uncached Hyperdrive connection inside the $5 `smzwaldorf` cluster. The cluster also contains the empty `smz-cms` logical database. App B sessions use the `app_b` schema. App A is static and needs no database. Enable `DEPLOY_DEMO_APPS=true` to publish both clients and register their exact production URLs through commit-triggered CI.
+Only Auth connects to the `smz-auth` logical database through Hyperdrive in the $5 `smzwaldorf` cluster. The cluster also contains the empty `smz-cms` logical database. App A and App B are database-free OAuth test clients. Enable `DEPLOY_DEMO_APPS=true` to publish them and register their exact production URLs through commit-triggered CI.
 
 See [Cloudflare deployment](docs/CLOUDFLARE.md) for infrastructure configuration and the commit-triggered release workflow.
 
@@ -10,7 +10,7 @@ See [Cloudflare deployment](docs/CLOUDFLARE.md) for infrastructure configuration
 - **Persistence:** PostgreSQL + Drizzle, split into `auth` and `directory` schemas
 - **Upstream login:** Google only, exact verified email, pre-approved adults only
 - **App A:** Vite/React public OIDC client using Authorization Code + PKCE S256
-- **App B:** Hono confidential OIDC client using Authorization Code + PKCE S256 and an encrypted PostgreSQL session (legacy client ID `express-app`)
+- **App B:** Hono confidential OIDC client using Authorization Code + PKCE S256 and an encrypted HttpOnly cookie session (legacy client ID `express-app`)
 - **Authorization context:** live `GET /api/directory/v1/me/access-context`; roles and relationships are not embedded in ID tokens
 
 ```mermaid

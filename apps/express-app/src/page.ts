@@ -47,7 +47,7 @@ export function page(issuer: string, appAOrigin: string, user?: AuthUser, access
           <div><dt>Issuer</dt><dd>${escapeHtml(user.iss ?? issuer)}</dd></div>
           <div><dt>Subject</dt><dd>${escapeHtml(user.sub)}</dd></div>
           <div><dt>Client ID</dt><dd>express-app</dd></div>
-          <div><dt>Session</dt><dd>Server-side application session</dd></div>
+          <div><dt>Session</dt><dd>Encrypted HttpOnly cookie</dd></div>
           <div><dt>Directory access</dt><dd>${escapeHtml(accessContext?.access ?? accessError ?? "unavailable")}</dd></div>
           <div><dt>School roles</dt><dd>${escapeHtml(accessContext?.roles.join(", ") || "none")}</dd></div>
           <div><dt>Class scopes</dt><dd>${escapeHtml(accessContext?.classScopes.effective.join(", ") || "none")}</dd></div>

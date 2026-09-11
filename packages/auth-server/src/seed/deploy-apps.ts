@@ -9,6 +9,6 @@ const applications = [
   { clientId: "express-app", displayName: "App B", clientType: "confidential", clientSecretEnv: "APP_B_CLIENT_SECRET", publicOrigin: config.APP_B_ORIGIN, redirectUris: [`${config.APP_B_ORIGIN}/auth/callback`], postLogoutRedirectUris: [`${config.APP_B_ORIGIN}/`], scopes: ["openid", "profile", "email", "directory:access", "offline_access"] },
 ];
 try {
-  await applyDirectorySeed(validateDirectorySeed({ version: 1, school: { code: "smzwaldorf", displayName: "SMZ Waldorf" }, people: [], families: [], classes: [], applications, appAccess: [] }));
-  console.log("Registered App A and App B with exact deployment origins.");
+  await applyDirectorySeed(validateDirectorySeed({ version: 1, school: { code: "smzwaldorf", displayName: "SMZ Waldorf" }, people: [], families: [], classes: [], applications: applications.filter(app => process.env.DEPLOY_PAGES !== "false" || app.clientId !== "vite-app"), appAccess: [] }));
+  console.log("Registered enabled OAuth test apps with exact deployment origins.");
 } finally { await closeDatabase(); }

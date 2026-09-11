@@ -1,15 +1,14 @@
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { secureHeaders } from "hono/secure-headers";
-import type { Pool } from "pg";
 import * as oauth from "openid-client";
 import type { AppConfig } from "./config.js";
 import type { AccessContext } from "./types.js";
-import { DatabaseSession } from "./session.js";
+import { CookieSession, COOKIE_CHUNK_SIZE, MAX_COOKIE_CHUNKS } from "./session.js";
 import { page } from "./page.js";
 
-export function createApp(settings: AppConfig, pool: Pool) {
-  const app = new Hono<{ Variables: { session: DatabaseSession } }>();
+export function createApp(settings: AppConfig) {
+  const app = new Hono<{ Variables: { session: CookieSession } }>();
   const issuer = new URL(settings.AUTH_ISSUER);
   const resource = `${issuer.origin}/api/directory/v1`;
   const cookieName = settings.production ? "__Host-smz-app-b" : "smz.app-b";
@@ -24,24 +23,24 @@ export function createApp(settings: AppConfig, pool: Pool) {
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
     if (c.req.path === "/health") return next();
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const session = new DatabaseSession(client, settings.APP_B_COOKIE_SECRET);
-      await session.load(getCookie(c, cookieName));
-      c.set("session", session);
-      await next();
-      if (c.error) { await client.query("ROLLBACK"); return; }
-      const saved = await session.save();
-      await client.query("COMMIT");
-      const options = { httpOnly: true, secure: settings.production, sameSite: "Lax" as const, path: "/" };
-      if (saved.token) setCookie(c, cookieName, saved.token, { ...options, maxAge: 3600 });
-      else if (saved.cleared) deleteCookie(c, cookieName, options);
-    } catch (error) {
-      await client.query("ROLLBACK"); throw error;
-    } finally { client.release(); }
+    const session = new CookieSession(settings.APP_B_COOKIE_SECRET);
+    const names = Array.from({ length: MAX_COOKIE_CHUNKS }, (_, i) => `${cookieName}.${i}`);
+    await session.load(names.map(name => getCookie(c, name) ?? "").join(""));
+    c.set("session", session);
+    await next();
+    if (c.error) return;
+    const saved = await session.save();
+    const options = { httpOnly: true, secure: settings.production, sameSite: "Lax" as const, path: "/" };
+    if (saved.token || saved.cleared) {
+      deleteCookie(c, cookieName, options);
+      for (const [i, name] of names.entries()) {
+        const chunk = saved.token?.slice(i * COOKIE_CHUNK_SIZE, (i + 1) * COOKIE_CHUNK_SIZE);
+        if (chunk) setCookie(c, name, chunk, { ...options, maxAge: saved.maxAge });
+        else deleteCookie(c, name, options);
+      }
+    }
   });
-  async function access(session: DatabaseSession): Promise<{ context?: AccessContext; error?: string; status?: number }> {
+  async function access(session: CookieSession): Promise<{ context?: AccessContext; error?: string; status?: number }> {
     const request = (token: string) => fetch(`${resource}/me/access-context`, { headers: { Authorization: `Bearer ${token}` } });
     if (!session.data.accessToken) return { error: "missing_access_token", status: 401 };
     let response = await request(session.data.accessToken);
@@ -49,14 +48,13 @@ export function createApp(settings: AppConfig, pool: Pool) {
       const tokens = await oauth.refreshTokenGrant(await configuration(), session.data.refreshToken, { resource });
       session.data.accessToken = tokens.access_token;
       session.data.refreshToken = tokens.refresh_token ?? session.data.refreshToken;
-      session.data.idToken = tokens.id_token ?? session.data.idToken;
       session.touch();
       response = await request(tokens.access_token);
     }
     if (!response.ok) return { error: "directory_access_unavailable", status: response.status };
     return { context: await response.json() as AccessContext };
   }
-  async function clear(session: DatabaseSession) {
+  async function clear(session: CookieSession) {
     try {
       if (session.data.accessToken || session.data.refreshToken) {
         const config = await configuration();
@@ -68,7 +66,7 @@ export function createApp(settings: AppConfig, pool: Pool) {
     } catch { /* Always remove the local session, including during an IdP outage. */ }
     await session.destroy();
   }
-  app.get("/health", async (c) => { await pool.query("SELECT 1"); return c.json({ ok: true }); });
+  app.get("/health", (c) => c.json({ ok: true, storage: "encrypted-cookie" }));
   app.get("/", async (c) => {
     const session = c.get("session");
     const result = session.data.user ? await access(session) : {};
@@ -103,7 +101,7 @@ export function createApp(settings: AppConfig, pool: Pool) {
     await session.rotate();
     session.data = {
       user: { sub: claims.sub, iss: claims.iss, name: typeof info.name === "string" ? info.name : undefined, email: typeof info.email === "string" ? info.email : undefined, picture: typeof info.picture === "string" ? info.picture : undefined },
-      accessToken: tokens.access_token, refreshToken: tokens.refresh_token, idToken: tokens.id_token,
+      accessToken: tokens.access_token, refreshToken: tokens.refresh_token,
     };
     return c.redirect("/");
   });

@@ -14,8 +14,8 @@ if (process.env.DEPLOY_DEMO_APPS === "true") {
   const authOrigin = new URL(issuer).origin;
   const launcher = await fetch(authOrigin);
   const html = await launcher.text();
-  if (!launcher.ok || !html.includes(`href="${process.env.APP_A_ORIGIN}"`) || !html.includes(`href="${process.env.APP_B_ORIGIN}"`)) throw new Error("Launcher is missing deployed applications");
-  for (const path of ["/", "/callback"]) {
+  if (!launcher.ok || (process.env.DEPLOY_PAGES !== "false" && !html.includes(`href="${process.env.APP_A_ORIGIN}"`)) || !html.includes(`href="${process.env.APP_B_ORIGIN}"`)) throw new Error("Launcher is missing deployed applications");
+  for (const path of (process.env.DEPLOY_PAGES === "false" ? [] : ["/", "/callback"])) {
     let ready = false;
     for (let attempt = 0; attempt < 6; attempt++) {
       try {
