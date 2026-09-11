@@ -2,9 +2,11 @@
 
 ## Current provisioning scope
 
-Auth and App B reuse `smzwaldorf/smz-auth`: PlanetScale Postgres 17, Tokyo, PS-5 single node at $5/month base, 10 GB storage cap, billed through Cloudflare account 善美真. Both Workers use the same Hyperdrive configuration with query caching disabled. App B sessions live in `app_b.session`; Auth migrations retain their existing schemas. Sharing credentials means schema separation is not a database privilege boundary.
+Cluster `smzwaldorf/smzwaldorf` contains the logical databases `smz-auth` (Auth and the App B demo session schema) and `smz-cms` (empty, reserved for CMS). They share one PlanetScale Postgres 17, Tokyo, PS-5 single node at $5/month base, 10 GB storage cap, billed through Cloudflare account 善美真. Both Workers use the same Hyperdrive configuration with query caching disabled. App B sessions live in `app_b.session`; Auth migrations retain their existing schemas. Sharing credentials means schema separation is not a database privilege boundary.
 
-This supersedes the initial per-app database plan. `DEPLOY_DEMO_APPS=true` publishes both clients. CI registers their exact origins without importing people or granting directory access, migrates both schemas using the existing `PLANETSCALE_DATABASE_URL` secret, and creates the Pages project if needed. Set `APP_B_HYPERDRIVE_ID` equal to `CLOUDFLARE_HYPERDRIVE_ID`; no separate App B migration credential is required. App A is static and needs no database.
+This supersedes the initial per-app cluster plan. `DEPLOY_DEMO_APPS=true` publishes both clients. CI registers their exact origins without importing people or granting directory access, migrates both schemas using the existing `PLANETSCALE_DATABASE_URL` secret, and creates the Pages project if needed. Set `APP_B_HYPERDRIVE_ID` equal to `CLOUDFLARE_HYPERDRIVE_ID`; no separate App B migration credential is required. App A is static and needs no database.
+
+On 2026-09-11, the default `postgres` database could not be renamed because PlanetScale Patroni connections use it. Auth's `auth`, `directory`, and `drizzle` schemas were copied to `smz-auth`; all 23 tables passed content-checksum comparison. Hyperdrive and the GitHub production migration secret now target `smz-auth`, and the live Auth health check passed. The original schemas remain in `postgres` as a recovery copy, not the active application database. The temporary transfer role was revoked. The extra `smz-app-b` cluster was deleted.
 
 ## Runtime layout
 
