@@ -13,12 +13,10 @@
     "dotenv": "^17.2.1",
     "openid-client": "^6.7.1",
     "hono": "4.13.2",
-    "@hono/node-server": "2.1.1",
-    "pg": "^8.16.3"
+    "@hono/node-server": "2.1.1"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
-    "tsx": "^4.20.5",
-    "@types/pg": "^8.15.5"
+    "tsx": "^4.20.5"
   }
 }

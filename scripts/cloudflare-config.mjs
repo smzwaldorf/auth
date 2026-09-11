@@ -22,9 +22,8 @@ for (const [name, source, hostname] of [["auth", "packages/auth-server", new URL
   config.main = path.resolve(source, config.main);
   config.account_id = account;
   config.vars = vars;
-  const bindingId = name === "auth" ? id : required("APP_B_HYPERDRIVE_ID");
-  if (!/^[a-f0-9]{32}$/i.test(bindingId) || /^0+$/.test(bindingId) || (name === "app-b" && bindingId === id)) throw new Error("App B requires its own Hyperdrive binding and database");
-  config.hyperdrive = [{ binding: "HYPERDRIVE", id: bindingId }];
+  if (name === "auth") config.hyperdrive = [{ binding: "HYPERDRIVE", id }];
+  else { delete config.hyperdrive; delete config.triggers; }
   if (hostname.endsWith(".workers.dev")) {
     if (!new RegExp(`^${config.name}\\.[a-z0-9-]+\\.workers\\.dev$`).test(hostname)) throw new Error(`The ${name} workers.dev hostname must match Worker name ${config.name}`);
     config.workers_dev = true;

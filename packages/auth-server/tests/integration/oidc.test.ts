@@ -4,6 +4,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { createApp } from "../../src/app.js";
 import { auth } from "../../src/auth.js";
 import { config, directoryAudience } from "../../src/config.js";
 import { closeDatabase, db } from "../../src/db/client.js";
@@ -23,6 +24,15 @@ function request(pathname: string, init?: RequestInit) {
 describe.runIf(enabled).sequential("OAuth 2.1 and OIDC provider", () => {
   beforeAll(async () => applyDirectorySeed(seed));
   afterAll(async () => closeDatabase());
+
+  it("returns direct sign-in visits to the app launcher without starting an invalid OAuth flow", async () => {
+    const app = createApp({ ...config, GOOGLE_CLIENT_ID: "integration-test-client", GOOGLE_CLIENT_SECRET: "integration-test-secret" }, db);
+    for (const path of ["/sign-in", "/sign-in?error=google", "/sign-in/google?oauth_query="]) {
+      const response = await app.request(path);
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe("/");
+    }
+  });
 
   it("has the issuer-based account key required by Better Auth", async () => {
     await expect(db.select({ issuer: account.issuer }).from(account).limit(1)).resolves.toBeDefined();
@@ -79,6 +89,14 @@ describe.runIf(enabled).sequential("OAuth 2.1 and OIDC provider", () => {
     );
     const loginLocation = authorize.headers.get("location");
     expect(loginLocation).toBeTruthy();
+    const app = createApp({ ...config, GOOGLE_CLIENT_ID: "integration-test-client", GOOGLE_CLIENT_SECRET: "integration-test-secret" }, db);
+    const signIn = await app.request(loginLocation!);
+    expect(signIn.status).toBe(200);
+    const href = (await signIn.text()).match(/href="([^\"]*oauth_query[^\"]*)"/)?.[1];
+    expect(href).toBeTruthy();
+    const browserRedirect = await app.request(href!);
+    expect(browserRedirect.status).toBe(302);
+    expect(browserRedirect.headers.get("location")).toMatch(/^https:\/\/accounts\.google\.com\//);
     const oauthQuery = new URL(loginLocation!, "http://localhost:3000").search.slice(1);
     const google = await request("/api/auth/sign-in/social", {
       method: "POST",
