@@ -1,6 +1,7 @@
 const issuer = process.env.AUTH_ISSUER;
 if (!issuer) throw new Error("Missing AUTH_ISSUER");
-const checks = [[`${new URL(issuer).origin}/health`, "health"], [`${issuer}/.well-known/openid-configuration`, "discovery"], [`${process.env.APP_B_ORIGIN}/health`, "app-b"]];
+const checks = [[`${new URL(issuer).origin}/health`, "health"], [`${issuer}/.well-known/openid-configuration`, "discovery"]];
+if (process.env.DEPLOY_DEMO_APPS === "true") checks.push([`${process.env.APP_B_ORIGIN}/health`, "app-b"]);
 for (const [url, kind] of checks) {
   let data;
   for (let attempt = 0; attempt < 6; attempt++) {

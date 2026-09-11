@@ -11,7 +11,7 @@ if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL) throw ne
 
 export default defineConfig({
   dialect: "postgresql",
-  schema: ["./src/db/auth-schema.ts", "./src/db/directory-schema.ts", "./src/db/app-session-schema.ts"],
+  schema: ["./src/db/auth-schema.ts", "./src/db/directory-schema.ts"],
   out: "./drizzle",
   dbCredentials: {
     url: process.env.DATABASE_URL ?? "postgres://smz:smz@localhost:5432/smz_identity",

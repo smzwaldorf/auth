@@ -51,9 +51,9 @@ An authenticating adult’s `directory.people.id`, Better Auth `auth.user.id`, a
 
 Better Auth and its OAuth Provider use version 1.7.2. The directory API is a persisted OAuth resource, and every allowed client has an explicit resource link. Token issuance rejects other resources. The directory API verifies issuer, canonical audience URL, scope, authorized party, and live person/application access.
 
-Cloudflare Pages serves App A. Two Workers run Auth and App B through request-scoped PostgreSQL pools backed by Hyperdrive and PlanetScale Postgres, with Hyperdrive query caching disabled. App B uses encrypted durable sessions in `auth.app_b_session` and secure host-only cookies. The Node entrypoints share the same application factories.
+Cloudflare Pages serves App A. Two Workers run Auth and App B through request-scoped PostgreSQL pools backed by Hyperdrive and PlanetScale Postgres, with Hyperdrive query caching disabled. App B uses encrypted durable sessions in `auth.app_b_session` in its own `smz-app-b` database, with a separate Hyperdrive binding and secure host-only cookies. The initial provisioned database is only `smz-auth`; all app databases use the `smz-` prefix. The Node entrypoints share the same application factories.
 
-The commit-triggered workflow validates and publishes all three components. Production provisioning, migration-history checks, secret rotation, backups, and real-Google release checks are documented in [Cloudflare deployment](CLOUDFLARE.md).
+The commit-triggered workflow validates all components and initially publishes only Auth. Demo publication requires explicit `DEPLOY_DEMO_APPS=true` and App B's own database configuration. Production provisioning, migration-history checks, secret rotation, backups, and real-Google release checks are documented in [Cloudflare deployment](CLOUDFLARE.md).
 
 ## Future `email-cms` contract
 

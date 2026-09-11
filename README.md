@@ -2,6 +2,8 @@
 
 A first-party identity service for one school, with Node development entrypoints and Cloudflare deployment adapters: Pages for App A, Workers for Auth and App B, and PlanetScale Postgres through Hyperdrive.
 
+Production provisioning starts with only `smz-auth`. Every app owns a separate `smz-` prefixed database; the demo apps are not deployed by default.
+
 See [Cloudflare deployment](docs/CLOUDFLARE.md) for infrastructure configuration and the commit-triggered release workflow.
 
 - **Identity service:** Hono + Better Auth + `@better-auth/oauth-provider`

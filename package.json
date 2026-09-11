@@ -29,7 +29,8 @@
     "start:app-a": "npm run preview -w @smz/vite-app",
     "start:app-b": "npm run start -w @smz/express-app",
     "cloudflare:check": "wrangler deploy --dry-run --config packages/auth-server/wrangler.jsonc --outdir .wrangler/build/auth && wrangler deploy --dry-run --config apps/express-app/wrangler.jsonc --outdir .wrangler/build/app-b",
-    "cloudflare:configure": "node scripts/cloudflare-config.mjs"
+    "cloudflare:configure": "node scripts/cloudflare-config.mjs",
+    "db:migrate:app-b": "node scripts/migrate-app-b.mjs"
   },
   "devDependencies": {
     "npm-run-all": "^4.1.5",

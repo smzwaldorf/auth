@@ -40,13 +40,22 @@ jobs:
       - run: npm run cloudflare:check
       - run: npm run db:migrate
       - run: npm run test:integration -w @smz/auth-server
+      - name: Create isolated App B test database
+        run: psql "$DATABASE_URL" -c 'CREATE DATABASE smz_app_b'
+      - run: npm run db:migrate:app-b
+        env:
+          APP_B_DATABASE_URL: postgres://smz:smz@localhost:5432/smz_app_b
       - run: RUN_DB_TESTS=true npx vitest run apps/express-app/tests --no-file-parallelism
+        env:
+          DATABASE_URL: postgres://smz:smz@localhost:5432/smz_app_b
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: validate
     runs-on: ubuntu-latest
     environment: production
     env:
+      DEPLOY_DEMO_APPS: ${{ vars.DEPLOY_DEMO_APPS }}
+      APP_B_HYPERDRIVE_ID: ${{ vars.APP_B_HYPERDRIVE_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_HYPERDRIVE_ID: ${{ vars.CLOUDFLARE_HYPERDRIVE_ID }}
@@ -78,12 +87,20 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
           NODE_ENV: production
+      - name: Migrate App B's separate database
+        if: vars.DEPLOY_DEMO_APPS == 'true'
+        run: npm run db:migrate:app-b
+        env:
+          APP_B_DATABASE_URL: ${{ secrets.APP_B_DATABASE_URL }}
       - run: npm run build:app-a
+        if: vars.DEPLOY_DEMO_APPS == 'true'
       - name: Deploy auth Worker
         run: npx wrangler deploy --config .wrangler/deploy/auth.json --secrets-file .wrangler/deploy/auth-secrets.json
       - name: Deploy App B Worker
+        if: vars.DEPLOY_DEMO_APPS == 'true'
         run: npx wrangler deploy --config .wrangler/deploy/app-b.json --secrets-file .wrangler/deploy/app-b-secrets.json
       - name: Deploy Pages frontend from this commit
+        if: vars.DEPLOY_DEMO_APPS == 'true'
         run: npx wrangler pages deploy apps/vite-app/dist --project-name "$PAGES_PROJECT_NAME" --branch main --commit-hash "$GITHUB_SHA"
       - run: node scripts/smoke-deployment.mjs
       - name: Remove temporary secret files
