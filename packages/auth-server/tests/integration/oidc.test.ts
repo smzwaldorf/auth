@@ -26,7 +26,7 @@ describe.runIf(enabled).sequential("OAuth 2.1 and OIDC provider", () => {
   afterAll(async () => closeDatabase());
 
   it("returns direct sign-in visits to the app launcher without starting an invalid OAuth flow", async () => {
-    const app = createApp(config, db);
+    const app = createApp({ ...config, GOOGLE_CLIENT_ID: "integration-test-client", GOOGLE_CLIENT_SECRET: "integration-test-secret" }, db);
     for (const path of ["/sign-in", "/sign-in?error=google", "/sign-in/google?oauth_query="]) {
       const response = await app.request(path);
       expect(response.status).toBe(302);
@@ -89,7 +89,7 @@ describe.runIf(enabled).sequential("OAuth 2.1 and OIDC provider", () => {
     );
     const loginLocation = authorize.headers.get("location");
     expect(loginLocation).toBeTruthy();
-    const app = createApp(config, db);
+    const app = createApp({ ...config, GOOGLE_CLIENT_ID: "integration-test-client", GOOGLE_CLIENT_SECRET: "integration-test-secret" }, db);
     const signIn = await app.request(loginLocation!);
     expect(signIn.status).toBe(200);
     const href = (await signIn.text()).match(/href="([^\"]*oauth_query[^\"]*)"/)?.[1];
