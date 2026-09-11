@@ -5,9 +5,9 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { auth } from "../../src/auth.js";
-import { config } from "../../src/config.js";
+import { config, directoryAudience } from "../../src/config.js";
 import { closeDatabase, db } from "../../src/db/client.js";
-import { oauthClient } from "../../src/db/schema.js";
+import { account, oauthClient, oauthResource } from "../../src/db/schema.js";
 import { applyDirectorySeed } from "../../src/seed/apply.js";
 import { validateDirectorySeed } from "../../src/seed/model.js";
 
@@ -23,6 +23,10 @@ function request(pathname: string, init?: RequestInit) {
 describe.runIf(enabled).sequential("OAuth 2.1 and OIDC provider", () => {
   beforeAll(async () => applyDirectorySeed(seed));
   afterAll(async () => closeDatabase());
+
+  it("has the issuer-based account key required by Better Auth", async () => {
+    await expect(db.select({ issuer: account.issuer }).from(account).limit(1)).resolves.toBeDefined();
+  });
 
   it("publishes path-prefixed OIDC discovery with code, refresh, and S256 only", async () => {
     const response = await request("/api/auth/.well-known/openid-configuration");
@@ -41,6 +45,11 @@ describe.runIf(enabled).sequential("OAuth 2.1 and OIDC provider", () => {
     expect(publicClient).toMatchObject({ public: true, tokenEndpointAuthMethod: "none", requirePKCE: true, redirectUris: ["http://localhost:5173/callback"] });
     expect(confidentialClient).toMatchObject({ public: false, tokenEndpointAuthMethod: "client_secret_post", requirePKCE: true, redirectUris: ["http://localhost:4000/auth/callback"] });
     expect(confidentialClient?.clientSecret).not.toBe(config.APP_B_CLIENT_SECRET);
+  });
+
+  it("retains OIDC scopes when issuing a directory resource token", async () => {
+    const [resource] = await db.select().from(oauthResource).where(eq(oauthResource.identifier, directoryAudience));
+    expect(resource?.allowedScopes).toEqual(["openid", "profile", "email", "directory:access", "offline_access"]);
   });
 
   it("rejects dynamic registration", async () => {

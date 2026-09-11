@@ -20,18 +20,22 @@
     "typecheck:auth": "npm run typecheck -w @smz/auth-server",
     "typecheck:app-a": "npm run typecheck -w @smz/vite-app",
     "typecheck:app-b": "npm run typecheck -w @smz/express-app",
-    "test": "npm run test -w @smz/auth-server",
+    "test": "npm run test -w @smz/auth-server && vitest run apps/express-app/src",
     "db:generate": "npm run db:generate -w @smz/auth-server",
     "db:migrate": "npm run db:migrate -w @smz/auth-server",
     "directory:seed": "npm run directory:seed -w @smz/auth-server --",
     "start": "npm-run-all --parallel start:auth start:app-a start:app-b",
     "start:auth": "npm run start -w @smz/auth-server",
     "start:app-a": "npm run preview -w @smz/vite-app",
-    "start:app-b": "npm run start -w @smz/express-app"
+    "start:app-b": "npm run start -w @smz/express-app",
+    "cloudflare:check": "wrangler deploy --dry-run --config packages/auth-server/wrangler.jsonc --outdir .wrangler/build/auth && wrangler deploy --dry-run --config apps/express-app/wrangler.jsonc --outdir .wrangler/build/app-b",
+    "cloudflare:configure": "node scripts/cloudflare-config.mjs",
+    "db:migrate:app-b": "node scripts/migrate-app-b.mjs"
   },
   "devDependencies": {
     "npm-run-all": "^4.1.5",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "wrangler": "4.131.0"
   },
   "engines": {
     "node": ">=22.0.0"

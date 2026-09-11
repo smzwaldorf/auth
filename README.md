@@ -1,12 +1,16 @@
 # SMZ Identity and single-school directory
 
-A persistent first-party identity provider for one school:
+A first-party identity service for one school, with Node development entrypoints and Cloudflare deployment adapters: Pages for App A, Workers for Auth and App B, and PlanetScale Postgres through Hyperdrive.
+
+Production provisioning starts with only `smz-auth`. Every app owns a separate `smz-` prefixed database; the demo apps are not deployed by default.
+
+See [Cloudflare deployment](docs/CLOUDFLARE.md) for infrastructure configuration and the commit-triggered release workflow.
 
 - **Identity service:** Hono + Better Auth + `@better-auth/oauth-provider`
 - **Persistence:** PostgreSQL + Drizzle, split into `auth` and `directory` schemas
 - **Upstream login:** Google only, exact verified email, pre-approved adults only
 - **App A:** Vite/React public OIDC client using Authorization Code + PKCE S256
-- **App B:** Express confidential OIDC client using Authorization Code + PKCE S256 and a local server session
+- **App B:** Hono confidential OIDC client using Authorization Code + PKCE S256 and an encrypted PostgreSQL session (legacy client ID `express-app`)
 - **Authorization context:** live `GET /api/directory/v1/me/access-context`; roles and relationships are not embedded in ID tokens
 
 ```mermaid
@@ -16,7 +20,7 @@ flowchart LR
   Auth --> OIDC["OAuth 2.1 / OIDC"]
   Auth --> Directory["Directory API"]
   OIDC --> AppA["Vite App A :5173"]
-  OIDC --> AppB["Express App B :4000"]
+  OIDC --> AppB["App B :4000"]
   Directory --> AppA
   Directory --> AppB
 ```
@@ -34,6 +38,9 @@ npm run directory:seed
 npm run directory:seed -- --apply
 npm run dev
 ```
+
+This setup is for local development and auth-flow review. the example secrets are local defaults; do
+not expose these services as a production deployment.
 
 `directory:seed` is a dry-run unless `--apply` is present. The committed file is placeholder-only. For real school data, copy it to `packages/auth-server/seeds/directory.seed.private.json`; private seed files are ignored.
 

@@ -4,7 +4,7 @@ import process from "node:process";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { config } from "../config.js";
+import { config, directoryAudience } from "../config.js";
 import {
   account,
   appAccess,
@@ -12,14 +12,15 @@ import {
   auditEvents,
   classMemberships,
   classes,
-  developmentLoginAccounts,
   families,
   familyMemberships,
   loginInvitations,
   oauthAccessToken,
   oauthClient,
+  oauthClientResource,
   oauthConsent,
   oauthRefreshToken,
+  oauthResource,
   people,
   personRoles,
   session,
@@ -89,15 +90,6 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
               updatedAt: now,
             },
           });
-      }
-
-      if (person.developmentLogin) {
-        await tx
-          .insert(developmentLoginAccounts)
-          .values({ personId: person.id, label: person.developmentLogin.label, enabled: true, updatedAt: now })
-          .onConflictDoUpdate({ target: developmentLoginAccounts.personId, set: { label: person.developmentLogin.label, enabled: true, updatedAt: now } });
-      } else {
-        await tx.delete(developmentLoginAccounts).where(eq(developmentLoginAccounts.personId, person.id));
       }
     }
 
@@ -171,6 +163,35 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
       }
     }
 
+    await tx
+      .insert(oauthResource)
+      .values({
+        id: `resource:${directoryAudience}`,
+        identifier: directoryAudience,
+        name: "SMZ Directory API",
+        accessTokenTtl: 15 * 60,
+        refreshTokenTtl: 30 * 24 * 60 * 60,
+        // Better Auth applies this list as an intersection, so it must retain
+        // the OIDC scopes as well as the directory API permission. Otherwise
+        // `openid` is stripped and no ID token can be issued.
+        allowedScopes: ["openid", "profile", "email", "directory:access", "offline_access"],
+        dpopBoundAccessTokensRequired: false,
+        disabled: false,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: oauthResource.identifier,
+        set: {
+          name: "SMZ Directory API",
+          accessTokenTtl: 15 * 60,
+          refreshTokenTtl: 30 * 24 * 60 * 60,
+          allowedScopes: ["openid", "profile", "email", "directory:access", "offline_access"],
+          disabled: false,
+          updatedAt: now,
+        },
+      });
+
     for (const application of seed.applications) {
       const rawSecret = application.clientSecretEnv
         ? process.env[application.clientSecretEnv] ?? (application.clientSecretEnv === "APP_B_CLIENT_SECRET" ? config.APP_B_CLIENT_SECRET : undefined)
@@ -195,6 +216,7 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
           redirectUris: application.redirectUris,
           postLogoutRedirectUris: application.postLogoutRedirectUris,
           tokenEndpointAuthMethod: application.clientType === "public" ? "none" : "client_secret_post",
+          applicationType: "web",
           grantTypes: ["authorization_code", "refresh_token"],
           responseTypes: ["code"],
           public: application.clientType === "public",
@@ -215,6 +237,7 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
             redirectUris: application.redirectUris,
             postLogoutRedirectUris: application.postLogoutRedirectUris,
             tokenEndpointAuthMethod: application.clientType === "public" ? "none" : "client_secret_post",
+            applicationType: "web",
             grantTypes: ["authorization_code", "refresh_token"],
             responseTypes: ["code"],
             public: application.clientType === "public",
@@ -223,6 +246,22 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
             metadata: { clientId: application.clientId },
           },
         });
+
+      if (application.scopes.includes("directory:access")) {
+        await tx
+          .insert(oauthClientResource)
+          .values({
+            id: `client-resource:${application.clientId}:${directoryAudience}`,
+            clientId: application.clientId,
+            resourceId: directoryAudience,
+            createdAt: now,
+          })
+          .onConflictDoNothing();
+      } else {
+        await tx
+          .delete(oauthClientResource)
+          .where(and(eq(oauthClientResource.clientId, application.clientId), eq(oauthClientResource.resourceId, directoryAudience)));
+      }
 
       await tx
         .insert(applications)

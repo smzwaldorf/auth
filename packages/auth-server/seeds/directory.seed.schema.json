@@ -35,14 +35,6 @@
               "status": { "enum": ["pending", "activated", "expired", "revoked"] },
               "expiresAt": { "type": "string", "format": "date-time" }
             }
-          },
-          "developmentLogin": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["label"],
-            "properties": {
-              "label": { "type": "string", "minLength": 1 }
-            }
           }
         }
       }

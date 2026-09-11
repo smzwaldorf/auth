@@ -1,18 +1,3 @@
 import { db } from "./db/client.js";
-import { auditEvents } from "./db/schema.js";
-
-export async function recordAuditEvent(input: {
-  eventType: string;
-  actor: string;
-  personId?: string;
-  clientId?: string;
-  detail?: Record<string, unknown>;
-}): Promise<void> {
-  await db.insert(auditEvents).values({
-    eventType: input.eventType,
-    actor: input.actor,
-    personId: input.personId,
-    clientId: input.clientId,
-    detail: input.detail ?? {},
-  });
-}
+import { createAuditRecorder } from "./audit-service.js";
+export const recordAuditEvent = createAuditRecorder(db);

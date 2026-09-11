@@ -45,13 +45,15 @@ An authenticating adult’s `directory.people.id`, Better Auth `auth.user.id`, a
 - Authorization Code + PKCE S256 is required for public and confidential clients.
 - Exact redirect URIs are stored in PostgreSQL.
 - The Vite origin is read live from the registered application before CORS is granted.
-- Access tokens require audience `smz-directory` and scope `directory:access`.
+- Access tokens require the canonical directory API URL audience and scope `directory:access`.
 - Client secrets and OAuth tokens are stored hashed or encrypted; real seed data and `.env` are ignored.
 - App/person lifecycle is checked at token issue/refresh and at every directory request.
 
-The latest stable OAuth Provider line (1.6.x) is still flagged by `GHSA-p2fr-6hmx-4528`; its upstream fix is currently prerelease-only. This service applies the advisory's stable-line workaround: one configured resource audience, token issuance rejects every other resource, and the directory API accepts no audience set beyond `smz-directory` plus the provider's OIDC UserInfo audience. Upgrade and migrate when a patched stable Better Auth release is published.
+Better Auth and its OAuth Provider use version 1.7.2. The directory API is a persisted OAuth resource, and every allowed client has an explicit resource link. Token issuance rejects other resources. The directory API verifies issuer, canonical audience URL, scope, authorized party, and live person/application access.
 
-Production still needs HTTPS, managed secret/key rotation, durable application session storage, database backups, monitoring, and a manual real-Google release smoke.
+Cloudflare Pages serves App A. Two Workers run Auth and App B through request-scoped PostgreSQL pools backed by Hyperdrive and PlanetScale Postgres, with Hyperdrive query caching disabled. App B uses encrypted durable sessions in `auth.app_b_session` in its own `smz-app-b` database, with a separate Hyperdrive binding and secure host-only cookies. The initial provisioned database is only `smz-auth`; all app databases use the `smz-` prefix. The Node entrypoints share the same application factories.
+
+The commit-triggered workflow validates all components and initially publishes only Auth. Demo publication requires explicit `DEPLOY_DEMO_APPS=true` and App B's own database configuration. Production provisioning, migration-history checks, secret rotation, backups, and real-Google release checks are documented in [Cloudflare deployment](CLOUDFLARE.md).
 
 ## Future `email-cms` contract
 
