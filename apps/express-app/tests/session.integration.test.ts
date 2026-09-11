@@ -6,7 +6,7 @@ import { parseConfig } from "../src/config.js";
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const secret = "test-session-encryption-key-32-characters";
 describe.runIf(process.env.RUN_DB_TESTS === "true")("durable app sessions", () => {
-  beforeAll(async () => { await pool.query("SELECT 1 FROM auth.app_b_session LIMIT 1"); });
+  beforeAll(async () => { await pool.query("SELECT 1 FROM app_b.session LIMIT 1"); });
   afterAll(async () => { await pool.end(); });
   it("survives a fresh app instance, rotates IDs and cannot resurrect a logged-out session", async () => {
     async function transaction<T>(action: (session: DatabaseSession) => Promise<T>) {
@@ -30,7 +30,7 @@ describe.runIf(process.env.RUN_DB_TESTS === "true")("durable app sessions", () =
     try {
       await client.query("BEGIN"); const s = new DatabaseSession(client, secret); await s.rotate(); s.data.accessToken = "expired"; token = (await s.save()).token; await client.query("COMMIT");
       const hash = Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token!))).toString("hex");
-      await client.query("UPDATE auth.app_b_session SET expires_at = now() - interval '1 second' WHERE id = $1", [hash]);
+      await client.query("UPDATE app_b.session SET expires_at = now() - interval '1 second' WHERE id = $1", [hash]);
       await client.query("BEGIN"); const expired = new DatabaseSession(client, secret); await expired.load(token); expect(expired.data).toEqual({}); await expired.destroy(); await client.query("COMMIT");
     } finally { client.release(); }
     const config = parseConfig({}, false);

@@ -30,7 +30,7 @@ export class DatabaseSession {
     this.id = await hash(token);
     // Serialize refresh, callback, and logout for the same session across isolates.
     await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [this.id]);
-    const result = await this.client.query<{ data: string }>("SELECT data FROM auth.app_b_session WHERE id = $1 AND expires_at > now() FOR UPDATE", [this.id]);
+    const result = await this.client.query<{ data: string }>("SELECT data FROM app_b.session WHERE id = $1 AND expires_at > now() FOR UPDATE", [this.id]);
     if (result.rows[0]) {
       try { this.data = await decryptSession(result.rows[0].data, this.secret); }
       catch { await this.destroy(); }
@@ -45,14 +45,14 @@ export class DatabaseSession {
   }
   touch() { this.changed = true; }
   async destroy() {
-    if (this.id) await this.client.query("DELETE FROM auth.app_b_session WHERE id = $1", [this.id]);
+    if (this.id) await this.client.query("DELETE FROM app_b.session WHERE id = $1", [this.id]);
     this.id = undefined; this.token = undefined; this.data = {}; this.changed = false; this.cleared = true;
   }
   async save(): Promise<{ token?: string; cleared: boolean }> {
     if (this.changed && this.id) {
       const data = await encryptSession(this.data, this.secret);
-      if (this.token) await this.client.query("INSERT INTO auth.app_b_session (id, data, expires_at) VALUES ($1, $2, now() + interval '1 hour')", [this.id, data]);
-      else await this.client.query("UPDATE auth.app_b_session SET data = $2 WHERE id = $1 AND expires_at > now()", [this.id, data]);
+      if (this.token) await this.client.query("INSERT INTO app_b.session (id, data, expires_at) VALUES ($1, $2, now() + interval '1 hour')", [this.id, data]);
+      else await this.client.query("UPDATE app_b.session SET data = $2 WHERE id = $1 AND expires_at > now()", [this.id, data]);
     }
     return { token: this.token, cleared: this.cleared };
   }

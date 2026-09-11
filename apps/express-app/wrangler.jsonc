@@ -8,7 +8,7 @@
   "preview_urls": false,
   "observability": { "enabled": true },
   "triggers": { "crons": ["17 * * * *"] },
-  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "00000000000000000000000000000000", "localConnectionString": "postgres://smz:smz@127.0.0.1:55432/smz_app_b" }],
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "00000000000000000000000000000000", "localConnectionString": "postgres://smz:smz@127.0.0.1:55432/smz_identity" }],
   "vars": {
     "AUTH_ISSUER": "https://auth.example.com/api/auth",
     "APP_A_ORIGIN": "https://app-a.example.com",

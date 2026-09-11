@@ -40,14 +40,12 @@ jobs:
       - run: npm run cloudflare:check
       - run: npm run db:migrate
       - run: npm run test:integration -w @smz/auth-server
-      - name: Create isolated App B test database
-        run: psql "$DATABASE_URL" -c 'CREATE DATABASE smz_app_b'
       - run: npm run db:migrate:app-b
         env:
-          APP_B_DATABASE_URL: postgres://smz:smz@localhost:5432/smz_app_b
+          APP_B_DATABASE_URL: postgres://smz:smz@localhost:5432/smz_identity
       - run: RUN_DB_TESTS=true npx vitest run apps/express-app/tests --no-file-parallelism
         env:
-          DATABASE_URL: postgres://smz:smz@localhost:5432/smz_app_b
+          DATABASE_URL: postgres://smz:smz@localhost:5432/smz_identity
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: validate
@@ -97,11 +95,11 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           APP_B_CLIENT_SECRET: ${{ secrets.APP_B_CLIENT_SECRET }}
-      - name: Migrate App B's separate database
+      - name: Migrate App B schema in shared database
         if: vars.DEPLOY_DEMO_APPS == 'true'
         run: npm run db:migrate:app-b
         env:
-          APP_B_DATABASE_URL: ${{ secrets.APP_B_DATABASE_URL }}
+          APP_B_DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
       - run: npm run build:app-a
         if: vars.DEPLOY_DEMO_APPS == 'true'
       - name: Deploy auth Worker

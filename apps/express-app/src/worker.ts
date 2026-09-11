@@ -11,7 +11,7 @@ export default {
   },
   async scheduled(_event: unknown, env: Env): Promise<void> {
     const client = new pg.Client({ connectionString: env.HYPERDRIVE.connectionString });
-    try { await client.connect(); await client.query("DELETE FROM auth.app_b_session WHERE expires_at <= now()"); }
+    try { await client.connect(); await client.query("DELETE FROM app_b.session WHERE expires_at <= now()"); }
     finally { await client.end(); }
   },
 };

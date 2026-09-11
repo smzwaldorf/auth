@@ -2,9 +2,9 @@
 
 ## Current provisioning scope
 
-Provision one database per app, with every database name prefixed `smz-`. `smzwaldorf/smz-auth` and `smzwaldorf/smz-app-b` each use PlanetScale Postgres 17, Tokyo, PS-5 single node at $5/month base, 10 GB storage cap, billed through Cloudflare account 善美真. Hyperdrive query caching must be disabled. Do not store other apps' sessions or domain data in this database.
+Auth and App B reuse `smzwaldorf/smz-auth`: PlanetScale Postgres 17, Tokyo, PS-5 single node at $5/month base, 10 GB storage cap, billed through Cloudflare account 善美真. Both Workers use the same Hyperdrive configuration with query caching disabled. App B sessions live in `app_b.session`; Auth migrations retain their existing schemas. Sharing credentials means schema separation is not a database privilege boundary.
 
-`DEPLOY_DEMO_APPS` defaults to false. The production workflow deploys only the Auth Worker until this is explicitly enabled. When enabled, CI registers both clients using the configured origins without importing people or changing app access. Provision App B's separate `smz-app-b` database and uncached Hyperdrive binding and configure `APP_B_DATABASE_URL`, `APP_B_HYPERDRIVE_ID`, and `APP_B_COOKIE_SECRET` before enabling this flag. CI creates the Pages project if it does not exist. App A is static and needs no database.
+This supersedes the initial per-app database plan. `DEPLOY_DEMO_APPS=true` publishes both clients. CI registers their exact origins without importing people or granting directory access, migrates both schemas using the existing `PLANETSCALE_DATABASE_URL` secret, and creates the Pages project if needed. Set `APP_B_HYPERDRIVE_ID` equal to `CLOUDFLARE_HYPERDRIVE_ID`; no separate App B migration credential is required. App A is static and needs no database.
 
 ## Runtime layout
 
@@ -14,11 +14,11 @@ Provision one database per app, with every database name prefixed `smz-`. `smzwa
 | App A | Cloudflare Pages | `npm run build:app-a`, output `apps/vite-app/dist` |
 | App B confidential OIDC client | Worker `smz-app-b` | `apps/express-app/src/worker.ts` |
 | Auth and directory | PlanetScale **Postgres** `smz-auth` through Hyperdrive | Auth Drizzle migrations |
-| App B sessions | Separate PlanetScale **Postgres** `smz-app-b` through its own Hyperdrive | `apps/express-app/migrations` |
+| App B sessions | Shared PlanetScale **Postgres** `smz-auth`, `app_b` schema | `apps/express-app/migrations` |
 
 App B's directory/package name remains `apps/express-app` / `@smz/express-app` and its registered client ID remains `express-app`. Its HTTP implementation is now Hono, shared by the Node and Worker entrypoints. Both Workers create their database pools inside each request and close them after processing. Transactions remain PostgreSQL transactions. No database objects or sockets are shared across Worker requests.
 
-App B stores only an opaque, random session ID in a Secure, HttpOnly, SameSite=Lax `__Host-` cookie. IDs are hashed in its own database; session payloads containing OAuth tokens are AES-GCM encrypted using `APP_B_COOKIE_SECRET`. The one-hour session expiry is absolute. Login and callback rotate IDs; a PostgreSQL transaction/advisory lock serializes operations for each existing session across isolates. An hourly Worker schedule removes expired sessions. Rotating the cookie secret invalidates existing App B sessions.
+App B stores only an opaque, random session ID in a Secure, HttpOnly, SameSite=Lax `__Host-` cookie. IDs are hashed in the App B session table; session payloads containing OAuth tokens are AES-GCM encrypted using `APP_B_COOKIE_SECRET`. The one-hour session expiry is absolute. Login and callback rotate IDs; a PostgreSQL transaction/advisory lock serializes operations for each existing session across isolates. An hourly Worker schedule removes expired sessions. Rotating the cookie secret invalidates existing App B sessions.
 
 ## One-time infrastructure setup
 
@@ -52,7 +52,7 @@ App B stores only an opaque, random session ID in a Secure, HttpOnly, SameSite=L
 | `CLOUDFLARE_ACCOUNT_ID` | Target account ID |
 | `CLOUDFLARE_HYPERDRIVE_ID` | Auth-only Hyperdrive configuration ID with caching disabled |
 | `DEPLOY_DEMO_APPS` | `false` initially; only `true` publishes the demo apps |
-| `APP_B_HYPERDRIVE_ID` | Separate App B binding, required only with demo deployment |
+| `APP_B_HYPERDRIVE_ID` | Same value as `CLOUDFLARE_HYPERDRIVE_ID` for the shared database |
 | `AUTH_ISSUER` | `https://smz-auth.<account-subdomain>.workers.dev/api/auth` (or a custom domain), no trailing slash |
 | `APP_A_ORIGIN` | App A HTTPS origin, no trailing slash |
 | `APP_B_ORIGIN` | App B HTTPS origin, no trailing slash |
@@ -68,7 +68,6 @@ App B stores only an opaque, random session ID in a Secure, HttpOnly, SameSite=L
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google Web OAuth credentials |
 | `APP_B_CLIENT_SECRET` | Random secret, at least 32 characters; must match seeded client |
 | `APP_B_COOKIE_SECRET` | Independent random secret, required only with demo deployment |
-| `APP_B_DATABASE_URL` | App B's own direct database connection, required only with demo deployment |
 
 Use verified TLS for the direct database connection. Hyperdrive holds the runtime database credentials; neither Worker receives `PLANETSCALE_DATABASE_URL`, and the frontend receives no secrets. The Pages build gets only `VITE_AUTH_ISSUER` and `VITE_APP_B_ORIGIN`.
 
@@ -76,7 +75,7 @@ Use verified TLS for the direct database connection. Hyperdrive holds the runtim
 
 `.github/workflows/ci.yml` validates pull requests and pushes to `main`. It runs type checks, unit tests, all builds, Worker dry-run bundles, migrations on a fresh PostgreSQL database, OIDC/directory tests, and durable-session tests.
 
-Only a push to `main` deploys. After validation, it generates configs from GitHub environment variables, verifies Hyperdrive caching, prepares secrets, runs migrations through the direct PlanetScale connection, deploys Auth, then checks its health and OIDC discovery. If `DEPLOY_DEMO_APPS=true`, it also registers both OIDC clients, migrates App B's own database, builds App A, ensures the Pages project exists, and deploys App B and Pages. No manual `workflow_dispatch` or `npm run deploy` path is provided. Infrastructure/bootstrap commands above do not publish application code.
+Only a push to `main` deploys. After validation, it generates configs from GitHub environment variables, verifies Hyperdrive caching, prepares secrets, runs migrations through the direct PlanetScale connection, deploys Auth, then checks its health and OIDC discovery. If `DEPLOY_DEMO_APPS=true`, it also registers both OIDC clients, migrates App B's schema in the shared database, builds App A, ensures the Pages project exists, and deploys App B and Pages. No manual `workflow_dispatch` or `npm run deploy` path is provided. Infrastructure/bootstrap commands above do not publish application code.
 
 The checked-in Wrangler files contain explicit placeholders for dry-run validation. `npm run cloudflare:configure` rejects missing or placeholder production configuration. Generated files live in ignored `.wrangler/`; CI passes secret files to Wrangler and deletes them even on failure. Keep Worker secrets stable across normal releases.
 
@@ -84,7 +83,7 @@ When demo apps are enabled, deployment is sequential, not atomic across three se
 
 ## Migration and operations notes
 
-The unreleased App B session migration was moved out of Auth into `apps/express-app/migrations/0001_sessions.sql` before any production migrations were applied. Auth migrations create only identity/directory tables. Run `npm run db:migrate:app-b` with a separate `APP_B_DATABASE_URL` when provisioning App B. Older branches of this repository rewrote migration history before this change: an existing database with a different Drizzle journal needs a schema/history reconciliation and backup before migration. Validate on a PlanetScale development branch first. A fresh database can apply this repository's complete migration chain.
+The unreleased App B session migration was moved out of Auth into `apps/express-app/migrations/0001_sessions.sql` before any production migrations were applied. Auth migrations create only identity/directory tables. Run `npm run db:migrate:app-b` with `APP_B_DATABASE_URL` pointing to the shared database when provisioning App B. Older branches of this repository rewrote migration history before this change: an existing database with a different Drizzle journal needs a schema/history reconciliation and backup before migration. Validate on a PlanetScale development branch first. A fresh database can apply this repository's complete migration chain.
 
 Before exposing production, configure PlanetScale backups/recovery, separate staging resources, secret rotation ownership, and Worker monitoring. Test a real Google login in both clients, refresh, CORS from the exact Pages origin, and coordinated logout in both directions. Revoke a user's app access and confirm the next directory request fails. CI health/discovery checks and local runtime checks cannot replace those live Google/browser checks.
 
@@ -98,7 +97,7 @@ npm run build
 npm run cloudflare:check
 ```
 
-For Node development, `npm run dev` still runs the three services. Auth uses `DATABASE_URL`; App B uses a separate `APP_B_DATABASE_URL` (local default database `smz_app_b`). Migrate both databases when running all local demos. For isolated integration tests, set `DATABASE_URL` to a disposable database, run migrations, then:
+For Node development, `npm run dev` still runs the three services. Auth uses `DATABASE_URL`; App B uses `APP_B_DATABASE_URL` or falls back to `DATABASE_URL` (local default `smz_identity`). Migrate both schemas when running all local demos. For isolated integration tests, set `DATABASE_URL` to a disposable database, run migrations, then:
 
 ```sh
 npm run test:integration -w @smz/auth-server

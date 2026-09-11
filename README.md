@@ -2,7 +2,7 @@
 
 A first-party identity service for one school, with Node development entrypoints and Cloudflare deployment adapters: Pages for App A, Workers for Auth and App B, and PlanetScale Postgres through Hyperdrive.
 
-Auth uses `smz-auth`; App B owns the separate `smz-app-b` database. App A is static and needs no database. Enable `DEPLOY_DEMO_APPS=true` to publish both clients and register their exact production URLs through commit-triggered CI.
+Auth and App B share the $5 `smz-auth` database and uncached Hyperdrive connection. App B sessions use the `app_b` schema. App A is static and needs no database. Enable `DEPLOY_DEMO_APPS=true` to publish both clients and register their exact production URLs through commit-triggered CI.
 
 See [Cloudflare deployment](docs/CLOUDFLARE.md) for infrastructure configuration and the commit-triggered release workflow.
 
