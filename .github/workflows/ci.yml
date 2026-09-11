@@ -87,6 +87,16 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
           NODE_ENV: production
+      - name: Register deployed OIDC clients
+        if: vars.DEPLOY_DEMO_APPS == 'true'
+        run: npx tsx packages/auth-server/src/seed/deploy-apps.ts
+        env:
+          DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
+          NODE_ENV: production
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          APP_B_CLIENT_SECRET: ${{ secrets.APP_B_CLIENT_SECRET }}
       - name: Migrate App B's separate database
         if: vars.DEPLOY_DEMO_APPS == 'true'
         run: npm run db:migrate:app-b
@@ -99,6 +109,9 @@ jobs:
       - name: Deploy App B Worker
         if: vars.DEPLOY_DEMO_APPS == 'true'
         run: npx wrangler deploy --config .wrangler/deploy/app-b.json --secrets-file .wrangler/deploy/app-b-secrets.json
+      - name: Ensure Pages project exists
+        if: vars.DEPLOY_DEMO_APPS == 'true'
+        run: node scripts/ensure-pages.mjs
       - name: Deploy Pages frontend from this commit
         if: vars.DEPLOY_DEMO_APPS == 'true'
         run: npx wrangler pages deploy apps/vite-app/dist --project-name "$PAGES_PROJECT_NAME" --branch main --commit-hash "$GITHUB_SHA"

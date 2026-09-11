@@ -107,6 +107,8 @@ export function createApp(config: RuntimeConfig, db: Database) {
   );
 
   app.get("/sign-in", (c) => {
+    const query = new URL(c.req.url).searchParams;
+    if (!query.has("client_id")) return c.redirect("/");
     const oauthQuery = new URL(c.req.url).search.slice(1);
     const googleHref = `/sign-in/google?oauth_query=${encodeURIComponent(oauthQuery)}`;
     return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · SMZ Identity</title><style>body{font:16px system-ui;margin:0;background:#f2eee8;color:#28211d}main{max-width:520px;margin:12vh auto;padding:36px;border-radius:24px;background:#fff;box-shadow:0 24px 80px #38271822}a{display:inline-flex;padding:13px 18px;border-radius:12px;color:#fff;background:#8b3e25;text-decoration:none;font-weight:700}.note{color:#75675d}</style></head><body><main><h1>Sign in to SMZ</h1><p>Use the exact verified Google email pre-approved by the school directory.</p>${googleConfigured ? `<a href="${googleHref}">Continue with Google</a>` : '<p><strong>Google credentials are not configured.</strong></p>'}<p class="note">Students cannot sign in in version 1.</p></main></body></html>`);
@@ -115,7 +117,7 @@ export function createApp(config: RuntimeConfig, db: Database) {
   app.get("/sign-in/google", async (c) => {
     if (!googleConfigured) return c.json({ error: "google_not_configured" }, 503);
     const oauthQuery = c.req.query("oauth_query");
-    if (!oauthQuery) return c.json({ error: "missing_oauth_query" }, 400);
+    if (!oauthQuery) return c.redirect("/");
     const headers = new Headers(c.req.raw.headers);
     headers.set("content-type", "application/json");
     // This same-origin GET is converted into Better Auth's POST endpoint below.

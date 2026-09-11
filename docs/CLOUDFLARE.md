@@ -2,9 +2,9 @@
 
 ## Current provisioning scope
 
-Provision one database per app, with every database name prefixed `smz-`. Only `smzwaldorf/smz-auth` is provisioned initially: PlanetScale Postgres 17, Tokyo, PS-5 single node at $5/month base, 10 GB storage cap, billed through Cloudflare account 善美真. Hyperdrive query caching must be disabled. Do not store other apps' sessions or domain data in this database.
+Provision one database per app, with every database name prefixed `smz-`. `smzwaldorf/smz-auth` and `smzwaldorf/smz-app-b` each use PlanetScale Postgres 17, Tokyo, PS-5 single node at $5/month base, 10 GB storage cap, billed through Cloudflare account 善美真. Hyperdrive query caching must be disabled. Do not store other apps' sessions or domain data in this database.
 
-`DEPLOY_DEMO_APPS` defaults to false. The production workflow deploys only the Auth Worker until this is explicitly enabled. App A and App B origins remain configured for their future OIDC registrations, but the workflow does not publish them. Before enabling the demo apps, provision App B's separate `smz-app-b` database and Hyperdrive binding, configure `APP_B_DATABASE_URL` and `APP_B_HYPERDRIVE_ID`, and create the Pages project.
+`DEPLOY_DEMO_APPS` defaults to false. The production workflow deploys only the Auth Worker until this is explicitly enabled. When enabled, CI registers both clients using the configured origins without importing people or changing app access. Provision App B's separate `smz-app-b` database and uncached Hyperdrive binding and configure `APP_B_DATABASE_URL`, `APP_B_HYPERDRIVE_ID`, and `APP_B_COOKIE_SECRET` before enabling this flag. CI creates the Pages project if it does not exist. App A is static and needs no database.
 
 ## Runtime layout
 
@@ -14,7 +14,7 @@ Provision one database per app, with every database name prefixed `smz-`. Only `
 | App A | Cloudflare Pages | `npm run build:app-a`, output `apps/vite-app/dist` |
 | App B confidential OIDC client | Worker `smz-app-b` | `apps/express-app/src/worker.ts` |
 | Auth and directory | PlanetScale **Postgres** `smz-auth` through Hyperdrive | Auth Drizzle migrations |
-| App B sessions (deferred) | Separate PlanetScale **Postgres** `smz-app-b` through its own Hyperdrive | `apps/express-app/migrations` |
+| App B sessions | Separate PlanetScale **Postgres** `smz-app-b` through its own Hyperdrive | `apps/express-app/migrations` |
 
 App B's directory/package name remains `apps/express-app` / `@smz/express-app` and its registered client ID remains `express-app`. Its HTTP implementation is now Hono, shared by the Node and Worker entrypoints. Both Workers create their database pools inside each request and close them after processing. Transactions remain PostgreSQL transactions. No database objects or sockets are shared across Worker requests.
 
@@ -24,7 +24,7 @@ App B stores only an opaque, random session ID in a Secure, HttpOnly, SameSite=L
 
 1. Choose three HTTPS origins: identity, App A, and App B. Cloudflare-provided domains are supported: `smz-auth.<account-subdomain>.workers.dev` for Auth, `smz-app-b.<account-subdomain>.workers.dev` for App B, and `<pages-project>.pages.dev` for App A. The generator enables `workers_dev` and omits custom-domain routes for these Worker hostnames. Custom Worker domains must belong to a zone in the target account; optional Pages custom domains must be configured separately.
 2. Create a PlanetScale **Postgres** database and production branch, then obtain its primary connection credentials. Do not use the PlanetScale MySQL/Vitess product or serverless MySQL driver. Create the Hyperdrive configuration using the PlanetScale connection details and **disable query caching**. Auth admission and revocation depend on fresh reads. The release workflow verifies `caching.disabled` through Cloudflare's API.
-3. When enabling demo apps, create a Cloudflare Pages **Direct Upload** project with production branch `main`. Do not enable a second Git integration deployment path: GitHub Actions publishes it from the validated commit.
+3. When enabling demo apps, give the CI token Pages Write on the deployment account. CI ensures a Cloudflare Pages **Direct Upload** project with production branch `main` exists. Do not enable a second Git integration deployment path: GitHub Actions publishes it from the validated commit.
 4. Configure the GitHub `production` environment with the variables and secrets below. Restrict deployment to `main` with branch/environment protection appropriate to the repository.
 5. Register the exact Google Web OAuth redirect `${AUTH_ISSUER}/callback/google`. Only `openid profile email` is requested. Existing users must have pre-approved, exact verified Google emails.
 6. Prepare and review the production directory seed. Change every client public origin, callback and post-logout URL to match the hosted origins. The helper below creates a new ignored file without overwriting an existing one:
@@ -76,7 +76,7 @@ Use verified TLS for the direct database connection. Hyperdrive holds the runtim
 
 `.github/workflows/ci.yml` validates pull requests and pushes to `main`. It runs type checks, unit tests, all builds, Worker dry-run bundles, migrations on a fresh PostgreSQL database, OIDC/directory tests, and durable-session tests.
 
-Only a push to `main` deploys. After validation, it generates configs from GitHub environment variables, verifies Hyperdrive caching, prepares secrets, runs migrations through the direct PlanetScale connection, deploys Auth, then checks its health and OIDC discovery. If `DEPLOY_DEMO_APPS=true`, it also migrates App B's own database, builds App A, and deploys App B and Pages. No manual `workflow_dispatch` or `npm run deploy` path is provided. Infrastructure/bootstrap commands above do not publish application code.
+Only a push to `main` deploys. After validation, it generates configs from GitHub environment variables, verifies Hyperdrive caching, prepares secrets, runs migrations through the direct PlanetScale connection, deploys Auth, then checks its health and OIDC discovery. If `DEPLOY_DEMO_APPS=true`, it also registers both OIDC clients, migrates App B's own database, builds App A, ensures the Pages project exists, and deploys App B and Pages. No manual `workflow_dispatch` or `npm run deploy` path is provided. Infrastructure/bootstrap commands above do not publish application code.
 
 The checked-in Wrangler files contain explicit placeholders for dry-run validation. `npm run cloudflare:configure` rejects missing or placeholder production configuration. Generated files live in ignored `.wrangler/`; CI passes secret files to Wrangler and deletes them even on failure. Keep Worker secrets stable across normal releases.
 
