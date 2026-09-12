@@ -54,6 +54,12 @@ function todayUtc(date = new Date()): string {
 
 export function createDirectory(db: Database) {
   async function hasLiveAppAccess(personId: string, clientId: string): Promise<boolean> {
+    // Two technical clients, one reviewed CMS admission. No person grants are copied.
+    if (clientId === "email-cms-server") {
+      const [serverApp] = await db.select({ enabled: applications.enabled }).from(applications).where(eq(applications.clientId, clientId)).limit(1);
+      if (!serverApp?.enabled) return false;
+      clientId = "email-cms";
+    }
     const [row] = await db
       .select({ personStatus: people.status, kind: people.kind, accessStatus: appAccess.status, appEnabled: applications.enabled })
       .from(people)

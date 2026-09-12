@@ -24,6 +24,9 @@ const enabled = process.env.RUN_DB_TESTS === "true";
 const baseline = validateDirectorySeed(JSON.parse(fs.readFileSync("seeds/directory.seed.example.json", "utf8")));
 for (const client of baseline.applications) client.frontChannelLogoutUri = `${client.publicOrigin}/logout/local`;
 const cms = validateDirectorySeed({ version: 1, school: baseline.school, people: [], families: [], classes: [], appAccess: [], applications: [{ clientId: "email-cms", displayName: "CMS", clientType: "public", publicOrigin: config.CMS_ORIGIN, redirectUris: [`${config.CMS_ORIGIN}/auth/callback`], postLogoutRedirectUris: [`${config.CMS_ORIGIN}/login`], frontChannelLogoutUri: `${config.CMS_ORIGIN}/logout/local`, scopes: ["openid", "profile", "email", "directory:access", "offline_access"] }] });
+const serverSecret = "synthetic-cms-server-secret-at-least-32-characters";
+process.env.CMS_OIDC_CLIENT_SECRET = serverSecret;
+cms.applications.push({ ...cms.applications[0]!, clientId: "email-cms-server", clientType: "confidential", clientSecretEnv: "CMS_OIDC_CLIENT_SECRET", redirectUris: ["http://localhost:5174/api/session/callback"] });
 const adultId = baseline.people[0]!.id;
 const verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
 let server: ReturnType<typeof serve>;
@@ -51,13 +54,14 @@ async function centralSession() {
   return { ...current, cookie: `better-auth.session_token=${encodeURIComponent(`${current.token}.${signature}`)}` };
 }
 async function issue(clientId: string, cookie: string) {
-  const redirect = clientId === "vite-app" ? "http://localhost:5173/callback" : clientId === "express-app" ? "http://localhost:4000/auth/callback" : "http://localhost:5174/auth/callback";
+  const redirect = clientId === "email-cms-server" ? "http://localhost:5174/api/session/callback" : clientId === "vite-app" ? "http://localhost:5173/callback" : clientId === "express-app" ? "http://localhost:4000/auth/callback" : "http://localhost:5174/auth/callback";
   const query = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: redirect, scope: "openid profile email offline_access directory:access", resource: directoryAudience, state: randomUUID(), nonce: randomUUID(), code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256" });
   const authorize = await request(`/api/auth/oauth2/authorize?${query}`, { headers: { cookie } });
   expect(authorize.status).toBe(302);
   const target = new URL(authorize.headers.get("location")!);
   expect(target.origin + target.pathname).toBe(redirect);
   const body = new URLSearchParams({ grant_type: "authorization_code", client_id: clientId, redirect_uri: redirect, code: target.searchParams.get("code")!, code_verifier: verifier, resource: directoryAudience });
+  if (clientId === "email-cms-server") body.set("client_secret", serverSecret);
   if (clientId === "express-app") body.set("client_secret", config.APP_B_CLIENT_SECRET);
   const response = await request("/api/auth/oauth2/token", { method: "POST", body });
   expect(response.status).toBe(200);
@@ -66,6 +70,7 @@ async function issue(clientId: string, cookie: string) {
 async function access(token: string) { return request("/api/directory/v1/me/access-context", { headers: { authorization: `Bearer ${token}` } }); }
 async function refresh(token: { refresh_token: string; clientId: string }) {
   const body = new URLSearchParams({ grant_type: "refresh_token", client_id: token.clientId, refresh_token: token.refresh_token, resource: directoryAudience });
+  if (token.clientId === "email-cms-server") body.set("client_secret", serverSecret);
   if (token.clientId === "express-app") body.set("client_secret", config.APP_B_CLIENT_SECRET);
   return request("/api/auth/oauth2/token", { method: "POST", body });
 }
@@ -84,7 +89,26 @@ describe.runIf(enabled).sequential("linked-application central logout", () => {
     await db.update(user).set({ emailVerified: true }).where(eq(user.id, adultId));
   });
   afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await closeDatabase(); });
-  it.each(["vite-app", "express-app", ...(trustedClientIds.has("email-cms") ? ["email-cms"] : [])])("%s initiation revokes every linked grant for this sid, preserving another device", async (initiator) => {
+  it("distinguishes malformed bearer credentials from an infrastructure outage", async () => {
+    const result = await access("not-a-jwt");
+    expect(result.status).toBe(401);
+    expect(await result.json()).toMatchObject({ error: "invalid_access_token" });
+  });
+  it("renews a live central session through verified application use but reports time expiry without revocation", async () => {
+    const current = await centralSession();
+    const token = await issue("email-cms-server", current.cookie);
+    await db.update(session).set({ expiresAt: new Date(Date.now() + 3600_000) }).where(eq(session.id, current.id));
+    expect((await access(token.access_token)).status).toBe(200);
+    const [extended] = await db.select().from(session).where(eq(session.id, current.id));
+    expect(extended!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 29 * 86400_000);
+    await db.update(session).set({ expiresAt: new Date(Date.now() - 1_000) }).where(eq(session.id, current.id));
+    const expired = await access(token.access_token);
+    expect(expired.status).toBe(401);
+    expect(await expired.json()).toMatchObject({ error: "session_expired" });
+    const [stillExpired] = await db.select().from(session).where(eq(session.id, current.id));
+    expect(stillExpired!.expiresAt.getTime()).toBeLessThan(Date.now());
+  });
+  it.each(["vite-app", "express-app", ...(trustedClientIds.has("email-cms") ? ["email-cms", "email-cms-server"] : [])])("%s initiation revokes every linked grant for this sid, preserving another device", async (initiator) => {
     const current = await centralSession(), other = await centralSession();
     const tokens = [];
     for (const clientId of trustedClientIds) tokens.push(await issue(clientId, current.cookie));

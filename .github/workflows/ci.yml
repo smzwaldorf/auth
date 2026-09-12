@@ -55,6 +55,7 @@ jobs:
       APP_A_ORIGIN: ${{ vars.APP_A_ORIGIN }}
       APP_B_ORIGIN: ${{ vars.APP_B_ORIGIN }}
       CMS_ORIGIN: ${{ vars.CMS_ORIGIN }}
+      CMS_OIDC_CLIENT_SECRET: ${{ secrets.CMS_OIDC_CLIENT_SECRET }}
       PAGES_PROJECT_NAME: ${{ vars.PAGES_PROJECT_NAME }}
       VITE_AUTH_ISSUER: ${{ vars.AUTH_ISSUER }}
       VITE_APP_B_ORIGIN: ${{ vars.APP_B_ORIGIN }}

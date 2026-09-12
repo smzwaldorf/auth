@@ -32,5 +32,5 @@ export function parseRuntimeConfig(input: Record<string, unknown>): RuntimeConfi
 }
 export function runtimeUrls(config: RuntimeConfig) {
   const authOrigin = new URL(config.AUTH_ISSUER).origin;
-  return { authOrigin, directoryAudience: `${authOrigin}/api/directory/v1`, trustedClientIds: new Set(["vite-app", "express-app", ...(config.CMS_ORIGIN ? ["email-cms"] : [])]) };
+  return { authOrigin, directoryAudience: `${authOrigin}/api/directory/v1`, trustedClientIds: new Set(["vite-app", "express-app", ...(config.CMS_ORIGIN ? ["email-cms", "email-cms-server"] : [])]) };
 }

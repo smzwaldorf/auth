@@ -35,3 +35,19 @@ export async function hasLiveSession(db: Database, personId: string, sessionId: 
   const [current] = await db.select({ id: session.id }).from(session).where(and(eq(session.id, sessionId), eq(session.userId, personId), gt(session.expiresAt, new Date()))).limit(1);
   return Boolean(current);
 }
+
+/** Expiry is renewable/reauthentication state, not an explicit revocation. */
+export async function centralSessionState(db: Database, personId: string, sessionId: unknown): Promise<"active" | "expired" | "revoked"> {
+  if (typeof sessionId !== "string" || !sessionId) return "revoked";
+  const [current] = await db.select({ expiresAt: session.expiresAt }).from(session).where(and(eq(session.id, sessionId), eq(session.userId, personId))).limit(1);
+  if (!current) return "revoked";
+  const now = new Date();
+  if (current.expiresAt <= now) return "expired";
+  // At most one extension per day. This runs only after bearer signature/scope validation.
+  // The conditional UPDATE cannot resurrect a concurrently deleted or expired session.
+  if (current.expiresAt.getTime() < now.getTime() + 29 * 86400_000) {
+    const updated = await db.update(session).set({ expiresAt: new Date(now.getTime() + 30 * 86400_000), updatedAt: now }).where(and(eq(session.id, sessionId), eq(session.userId, personId), gt(session.expiresAt, now))).returning({ id: session.id });
+    if (!updated.length) return "revoked";
+  }
+  return "active";
+}

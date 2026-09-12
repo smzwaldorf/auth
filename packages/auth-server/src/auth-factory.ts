@@ -57,6 +57,7 @@ export function createAuth(config: RuntimeConfig, db: Database) {
     baseURL: config.AUTH_ISSUER,
     secret: config.BETTER_AUTH_SECRET,
     trustedOrigins: [config.APP_A_ORIGIN, config.APP_B_ORIGIN, authOrigin, ...(config.CMS_ORIGIN ? [config.CMS_ORIGIN] : [])],
+    session: { expiresIn: 30 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
     database: drizzleAdapter(db, { provider: "pg", schema, transaction: true }),
     emailAndPassword: { enabled: false, disableSignUp: true },
     account: {
@@ -171,6 +172,7 @@ export function createAuth(config: RuntimeConfig, db: Database) {
         clientPrivileges: () => false,
         accessTokenExpiresIn: 15 * 60,
         refreshTokenExpiresIn: 30 * 24 * 60 * 60,
+        refreshTokenReuseInterval: 120,
         customAccessTokenClaims: async ({ user: tokenUser, metadata, resources }) => {
           const clientId = typeof metadata?.clientId === "string" ? metadata.clientId : undefined;
           const targetsDirectory = resources?.length === 1 && resources[0] === directoryAudience;

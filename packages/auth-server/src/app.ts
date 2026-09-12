@@ -1,3 +1,4 @@
+import { isAPIError } from "better-auth/api";
 import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resource-client";
 import { and, eq, inArray } from "drizzle-orm";
 import { createAuthClient } from "better-auth/client";
@@ -5,7 +6,7 @@ import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 
 import { createAuditRecorder } from "./audit-service.js";
-import { hasLiveSession } from "./global-logout.js";
+import { centralSessionState } from "./global-logout.js";
 import { createAuth } from "./auth-factory.js";
 import { runtimeUrls, type RuntimeConfig } from "./runtime-config.js";
 import type { Database } from "./db/database.js";
@@ -203,7 +204,9 @@ app.get("/logout-all/:returnTo", async (c) => {
         !clientId ||
         !hasOnlyExpectedAudiences(payload.aud, directoryAudience, `${config.AUTH_ISSUER}/oauth2/userinfo`)
       ) return c.json({ error: "invalid_token_context" }, 401);
-      if (!(await hasLiveSession(db, personId, payload.sid))) return c.json({ error: "access_revoked" }, 403);
+      const centralState = await centralSessionState(db, personId, payload.sid);
+      if (centralState === "revoked") return c.json({ error: "access_revoked" }, 403);
+      if (centralState === "expired") return c.json({ error: "session_expired" }, 401);
       const context = await getAccessContext(personId, clientId);
       if (!context) {
         await recordAuditEvent({ eventType: "directory.access.denied", actor: "directory-api", personId, clientId });
@@ -211,7 +214,13 @@ app.get("/logout-all/:returnTo", async (c) => {
       }
       return c.json(context, 200, { "Cache-Control": "private, no-store" });
     } catch (error) {
-      return c.json({ error: "invalid_access_token", message: error instanceof Error ? error.message : "Token verification failed" }, 401);
+      // Invalid bearer errors are distinct from database, JWKS and transport failures.
+      if (isAPIError(error) && error.status === "UNAUTHORIZED") return c.json({ error: "invalid_access_token" }, 401);
+      if (isAPIError(error) && error.status === "FORBIDDEN") return c.json({ error: "insufficient_scope" }, 403);
+      const code = (error as { code?: string })?.code;
+      if (typeof code === "string" && (code.startsWith("ERR_JWT_") || code === "ERR_JWS_SIGNATURE_VERIFICATION_FAILED" || code === "ERR_JWS_INVALID")) return c.json({ error: "invalid_access_token" }, 401);
+      if (!token) return c.json({ error: "invalid_access_token" }, 401);
+      return c.json({ error: "identity_unavailable" }, 503);
     }
   });
 

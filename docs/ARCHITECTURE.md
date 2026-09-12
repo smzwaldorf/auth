@@ -1,3 +1,11 @@
+> Session update (2026-09-13): CMS now has a confidential `email-cms-server` client for its backend session. Its fixed admission mapping reuses the existing `email-cms` grant and additionally requires the server application to be enabled. No new person grants are created. The public client remains registered for old open tabs during cutover.
+>
+> Central sessions use a 30-day rolling lifetime. Verified directory use extends a still-live session at most daily; it cannot resurrect a deleted or expired session. Expired central sessions return `401 session_expired`, missing/deleted sessions and revoked admission return `403 access_revoked`, and infrastructure failures return `503 identity_unavailable`. Access tokens remain 15 minutes and refresh tokens 30 days. Rotating refresh tokens support a 120-second same-request replay window for lost responses.
+>
+> Production client registration reads `CMS_OIDC_CLIENT_SECRET` from the production GitHub environment. CMS stores OAuth credentials encrypted in its own existing database and uses an opaque first-party HttpOnly cookie. Application identity retention is separate from active authorization.
+>
+> Local cross-repository validation: build CMS, then run `CMS_CHECKOUT=/absolute/cms/checkout DATABASE_URL=postgres://session_test@127.0.0.1:55444/smz_identity AUTH_ISSUER=http://localhost:55445/api/auth CMS_ORIGIN=http://localhost:55446 npx tsx scripts/cms-session-joint.ts` against the dedicated synthetic databases described by that script. It verifies PKCE/nonce, confidential admission, rotation after a lost response, concurrent requests, outage/recovery, expiry and explicit logout. No production credentials are used.
+
 # Architecture
 
 ## Ownership
