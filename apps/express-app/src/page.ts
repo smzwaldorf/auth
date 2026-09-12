@@ -7,7 +7,7 @@ function escapeHtml(value: unknown): string {
 
 export function page(issuer: string, appAOrigin: string, user?: AuthUser, accessContext?: AccessContext, accessError?: string): string {
   const authenticated = Boolean(user);
-  const signedIn = Boolean(user && accessContext?.access === "active");
+  const signedIn = authenticated;
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -56,7 +56,7 @@ export function page(issuer: string, appAOrigin: string, user?: AuthUser, access
       <div class="actions">
         <a href="${authenticated ? "/logout" : "/login"}">${authenticated ? "Sign out" : "Sign in through SMZ Auth"}</a>
         <a class="secondary" href="${escapeHtml(appAOrigin)}">Open Vite App A ↗</a>
-        ${signedIn ? '<a class="secondary" href="/protected">Open protected route</a>' : ""}
+        ${accessContext?.access === "active" ? '<a class="secondary" href="/protected">Open protected route</a>' : ""}
       </div>
       <script>
         const globalLogoutChannel = new BroadcastChannel("smz-global-logout");
@@ -66,4 +66,3 @@ export function page(issuer: string, appAOrigin: string, user?: AuthUser, access
   </body>
 </html>`;
 }
-

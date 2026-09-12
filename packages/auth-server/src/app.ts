@@ -184,6 +184,7 @@ export function createApp(config: RuntimeConfig, db: Database) {
     const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined;
     try {
       const payload = await resourceClient.verifyBearerToken(token, {
+        jwksUrl: `${config.AUTH_ISSUER}/jwks`,
         verifyOptions: { audience: directoryAudience, issuer: config.AUTH_ISSUER },
         requiredScopes: ["directory:access"],
         resourceMetadataMappings: {

@@ -36,6 +36,8 @@ function App() {
 
     async function loadDirectory(currentUser: User | null) {
       setUser(currentUser);
+      setError(undefined);
+      setAccessContext(undefined);
       if (!currentUser?.access_token) {
         setAccessContext(undefined);
         return;
@@ -139,7 +141,7 @@ function App() {
             <div><dt>Subject</dt><dd>{user.profile.sub}</dd></div>
             <div><dt>Client ID</dt><dd>vite-app</dd></div>
             <div><dt>Flow</dt><dd>Authorization Code + PKCE</dd></div>
-            <div><dt>Directory access</dt><dd>{accessContext?.access ?? "checking"}</dd></div>
+            <div><dt>Directory access</dt><dd>{accessContext?.access ?? (error ? "unavailable" : "checking")}</dd></div>
             <div><dt>School roles</dt><dd>{accessContext?.roles.join(", ") || "none"}</dd></div>
             <div><dt>Class scopes</dt><dd>{accessContext?.classScopes.effective.join(", ") || "none"}</dd></div>
           </dl>
