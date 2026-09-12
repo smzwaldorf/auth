@@ -123,3 +123,12 @@ Worker bindings use strict production configuration even under `wrangler dev`. T
 - Both Workers ran under local workerd with database health checks; Auth discovery/sign-in and five concurrent Auth database requests passed. App B's anonymous/protected/logout routes passed.
 - App A and App B rendered in a browser. Pages uses its default SPA fallback (no top-level `404.html` or callback redirect rules), preserving the callback pathname and query while serving the SPA document. A callback without OAuth state was correctly rejected by the frontend.
 - Workflow YAML and production-config generation were checked. No live Cloudflare/PlanetScale publication, real Hyperdrive connection, or complete Google sign-in/refresh/logout browser cycle was performed. Production identifiers, domains, credentials and bootstrap remain operator inputs.
+
+
+## CMS registration and coordinated logout (2026-09-12)
+
+Set production `CMS_ORIGIN=https://smz-cms.pages.dev` to enable the public `email-cms` client. Commit-triggered CI registers the exact `/auth/callback`, `/login` and `/logout/local` URLs with Authorization Code + PKCE and directory scopes. It does not import people or grant anyone application admission. CMS owns a separate uncached Hyperdrive to the `smz-cms` logical database on the existing cluster; Auth keeps its existing `smz-auth` binding.
+
+The registered logout coordinator supports all enabled trusted clients, preserving App A/B aliases. It deletes the initiating central session's linked grants transactionally, leaves other devices' sessions intact, and verifies live session IDs on directory requests. Cleanup frames require exact registered origins and one-time state; unconfirmed cleanup is reported after 3.5 seconds. App A's deployed `/logout/local` headers permit only Auth framing. App B clears its cookie chunks and acknowledges Auth without following a caller redirect. Browser restrictions may prevent third-party local cleanup, but cannot restore central authorization.
+
+Release validation includes PostgreSQL integration tests for CMS/App A/App B initiation, token and refresh rejection, other-device preservation, invalid returns and database failures. Production Google/browser verification remains a separate release check.

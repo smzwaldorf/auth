@@ -38,6 +38,7 @@ const applicationSchema = z.object({
   publicOrigin: z.string().url().optional(),
   redirectUris: z.array(z.string().url()).min(1),
   postLogoutRedirectUris: z.array(z.string().url()).default([]),
+  frontChannelLogoutUri: z.string().url().optional(),
   scopes: z.array(z.string().min(1)).min(1),
   enabled: z.boolean().default(true),
 });
@@ -147,6 +148,14 @@ export function validateDirectorySeed(input: unknown): DirectorySeed {
   }
 
   for (const app of seed.applications) {
+    if (app.frontChannelLogoutUri) {
+      const logout = new URL(app.frontChannelLogoutUri);
+      if (logout.origin !== app.publicOrigin || logout.search || logout.hash || logout.username || logout.password ||
+          (logout.protocol !== "https:" && !(logout.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(logout.hostname)))) {
+        issues.push(`application ${app.clientId} has an invalid same-origin front-channel logout URI`);
+      }
+    }
+
     if (app.clientType === "public" && app.clientSecretEnv) issues.push(`public client ${app.clientId} cannot have a client secret`);
     if (app.clientType === "confidential" && !app.clientSecretEnv) issues.push(`confidential client ${app.clientId} requires clientSecretEnv`);
     if (app.clientType === "public" && !app.publicOrigin) issues.push(`public client ${app.clientId} requires publicOrigin`);

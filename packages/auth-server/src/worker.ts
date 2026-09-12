@@ -6,6 +6,7 @@ export interface Env {
   AUTH_ISSUER: string;
   APP_A_ORIGIN: string;
   APP_B_ORIGIN: string;
+  CMS_ORIGIN?: string;
   BETTER_AUTH_SECRET: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;

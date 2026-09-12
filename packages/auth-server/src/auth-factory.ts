@@ -3,6 +3,7 @@ import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
+import { createGlobalLogout } from "./global-logout.js";
 import { jwt } from "better-auth/plugins";
 
 import { createAuditRecorder } from "./audit-service.js";
@@ -55,7 +56,7 @@ export function createAuth(config: RuntimeConfig, db: Database) {
     appName: "SMZ Identity",
     baseURL: config.AUTH_ISSUER,
     secret: config.BETTER_AUTH_SECRET,
-    trustedOrigins: [config.APP_A_ORIGIN, config.APP_B_ORIGIN, authOrigin],
+    trustedOrigins: [config.APP_A_ORIGIN, config.APP_B_ORIGIN, authOrigin, ...(config.CMS_ORIGIN ? [config.CMS_ORIGIN] : [])],
     database: drizzleAdapter(db, { provider: "pg", schema, transaction: true }),
     emailAndPassword: { enabled: false, disableSignUp: true },
     account: {
@@ -153,6 +154,7 @@ export function createAuth(config: RuntimeConfig, db: Database) {
       },
     },
     plugins: [
+      createGlobalLogout(db),
       jwt({ jwt: { issuer: config.AUTH_ISSUER } }),
       oauthProvider({
         loginPage: "/sign-in",

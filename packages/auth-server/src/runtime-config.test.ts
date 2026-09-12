@@ -9,3 +9,9 @@ describe("production runtime configuration", () => {
     expect(() => parseRuntimeConfig({ ...production, AUTH_ISSUER: "https://identity.school.test/" })).toThrow();
   });
 });
+
+it("enables CMS only with an explicit secure deployment origin", () => {
+  expect(runtimeUrls(parseRuntimeConfig(production)).trustedClientIds.has("email-cms")).toBe(false);
+  expect(runtimeUrls(parseRuntimeConfig({ ...production, CMS_ORIGIN: "https://smz-cms.pages.dev" })).trustedClientIds.has("email-cms")).toBe(true);
+  for (const CMS_ORIGIN of ["http://localhost:5174", "https://cms.example.com", "https://smz-cms.pages.dev/path", "https://user:password@smz-cms.pages.dev"]) expect(() => parseRuntimeConfig({ ...production, CMS_ORIGIN })).toThrow();
+});

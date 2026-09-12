@@ -19,7 +19,12 @@ export function createApp(settings: AppConfig) {
     });
     return discovery;
   }
-  app.use("*", secureHeaders());
+  app.use("*", secureHeaders({ xFrameOptions: false }));
+  app.use("*", async (c, next) => {
+    c.header("Content-Security-Policy", `frame-ancestors ${c.req.path === "/logout/local" ? issuer.origin : "\'none\'"}`);
+    if (c.req.path !== "/logout/local") c.header("X-Frame-Options", "DENY");
+    await next();
+  });
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
     if (c.req.path === "/health") return next();
@@ -114,12 +119,12 @@ export function createApp(settings: AppConfig) {
   });
   app.get("/logout", async (c) => { await clear(c.get("session")); return c.redirect(`${issuer.origin}/logout-all/app-b`); });
   app.get("/logout/local", async (c) => {
-    const returnTo = c.req.query("returnTo");
-    if (returnTo !== "app-a" && returnTo !== "app-b") return c.json({ error: "invalid_logout_return" }, 400);
-    await clear(c.get("session"));
-    const destination = new URL("/logout-complete", settings.APP_A_ORIGIN);
-    destination.searchParams.set("returnTo", returnTo);
-    return c.html(`<!doctype html><html><head><title>Signing out</title></head><body><p>Signing out…</p><script>const channel = new BroadcastChannel("smz-global-logout"); channel.postMessage("logout"); channel.close(); window.location.replace(${JSON.stringify(destination.href).replace(/</g, "\\u003c")});</script></body></html>`);
+    const state = c.req.query("logout_state");
+    let parentOrigin: string | undefined;
+    try { parentOrigin = new URL(c.req.header("referer") ?? "").origin; } catch { /* Reject missing or malformed parent. */ }
+    if (parentOrigin !== issuer.origin || !state || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(state)) return c.json({ error: "invalid_logout_context" }, 400);
+    await c.get("session").destroy();
+    return c.html(`<!doctype html><html><head><title>Signed out</title></head><body><p>Local session cleared.</p><script>if(window.parent!==window){const channel=new BroadcastChannel("smz-global-logout");channel.postMessage("logout");channel.close();window.parent.postMessage({type:"smz:logout-complete",state:${JSON.stringify(state)}},${JSON.stringify(issuer.origin)});}</script></body></html>`);
   });
   app.onError((error, c) => { console.error(error); return c.json({ error: "application_unavailable" }, 503); });
   return app;

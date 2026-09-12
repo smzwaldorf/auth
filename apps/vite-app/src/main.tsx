@@ -51,6 +51,15 @@ function App() {
 
     async function initialize() {
       try {
+        if (window.location.pathname === "/logout/local") {
+          const state = new URLSearchParams(window.location.search).get("logout_state");
+          const parentOrigin = document.referrer ? new URL(document.referrer).origin : undefined;
+          if (window.parent === window || parentOrigin !== authOrigin || !state || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(state)) throw new Error("Invalid logout context");
+          await auth.removeUser();
+          globalLogoutChannel.postMessage("logout");
+          window.parent.postMessage({ type: "smz:logout-complete", state }, authOrigin);
+          return;
+        }
         if (window.location.pathname === "/logout-complete") {
           const returnTo = new URLSearchParams(window.location.search).get("returnTo");
           globalLogoutChannel.postMessage("logout");

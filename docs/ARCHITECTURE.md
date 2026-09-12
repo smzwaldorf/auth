@@ -60,3 +60,12 @@ The commit-triggered workflow validates all components. With `DEPLOY_DEMO_APPS=t
 `../email-cms` is intentionally unchanged. Its articles, newsletters, delivery state, and action permissions remain local.
 
 A later migration may map the central `sub` to existing local users and have the backend call `GET /api/directory/v1/me/access-context`. That migration must preserve current local authorization/RLS until the backend-owned reader work and the cumulative `student_class_enrollment` schema are reconciled. Central school-directory ownership does not justify directly replacing current `auth.uid()` references or family foreign keys.
+
+
+## CMS registration and coordinated logout (2026-09-12)
+
+Set production `CMS_ORIGIN=https://smz-cms.pages.dev` to enable the public `email-cms` client. Commit-triggered CI registers the exact `/auth/callback`, `/login` and `/logout/local` URLs with Authorization Code + PKCE and directory scopes. It does not import people or grant anyone application admission. CMS owns a separate uncached Hyperdrive to the `smz-cms` logical database on the existing cluster; Auth keeps its existing `smz-auth` binding.
+
+The registered logout coordinator supports all enabled trusted clients, preserving App A/B aliases. It deletes the initiating central session's linked grants transactionally, leaves other devices' sessions intact, and verifies live session IDs on directory requests. Cleanup frames require exact registered origins and one-time state; unconfirmed cleanup is reported after 3.5 seconds. App A's deployed `/logout/local` headers permit only Auth framing. App B clears its cookie chunks and acknowledges Auth without following a caller redirect. Browser restrictions may prevent third-party local cleanup, but cannot restore central authorization.
+
+Release validation includes PostgreSQL integration tests for CMS/App A/App B initiation, token and refresh rejection, other-device preservation, invalid returns and database failures. Production Google/browser verification remains a separate release check.

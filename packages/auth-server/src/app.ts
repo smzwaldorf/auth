@@ -5,13 +5,14 @@ import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 
 import { createAuditRecorder } from "./audit-service.js";
+import { hasLiveSession } from "./global-logout.js";
 import { createAuth } from "./auth-factory.js";
 import { runtimeUrls, type RuntimeConfig } from "./runtime-config.js";
 import type { Database } from "./db/database.js";
 import { applications, oauthClient } from "./db/schema.js";
 import { createDirectory } from "./directory/service.js";
 import { hasOnlyExpectedAudiences } from "./directory/token-policy.js";
-import { appBLogoutUrl, parseLogoutReturn } from "./logout-coordinator.js";
+import { logoutPlan, renderLogoutPage, parseLogoutReturn } from "./logout-coordinator.js";
 
 export function createApp(config: RuntimeConfig, db: Database) {
   const { authOrigin, directoryAudience, trustedClientIds } = runtimeUrls(config);
@@ -41,7 +42,7 @@ export function createApp(config: RuntimeConfig, db: Database) {
     return null;
   }
 
-  app.use("*", secureHeaders());
+  app.use("*", (c, next) => secureHeaders({ referrerPolicy: c.req.path.startsWith("/logout-all/") ? "origin" : "no-referrer" })(c, next));
   app.use("*", async (c, next) => { c.header("Cache-Control", "no-store"); await next(); });
   app.use("/api/*", async (c, next) => {
     const origin = c.req.header("origin");
@@ -149,21 +150,25 @@ export function createApp(config: RuntimeConfig, db: Database) {
     return response;
   });
 
-  app.get("/logout-all/:returnTo", async (c) => {
-    const returnTo = parseLogoutReturn(c.req.param("returnTo"));
-    if (!returnTo) return c.json({ error: "invalid_logout_return" }, 400);
-
-    const headers = new Headers(c.req.raw.headers);
-    headers.set("origin", authOrigin);
-    const signOut = await auth.handler(
-      new Request(`${config.AUTH_ISSUER}/sign-out`, { method: "POST", headers }),
-    );
-    const responseHeaders = new Headers({ location: appBLogoutUrl(returnTo, config.APP_B_ORIGIN) });
-    const clearedSessionCookies = (signOut.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.()
-      ?? [signOut.headers.get("set-cookie")].filter((value): value is string => Boolean(value));
-    for (const cookie of clearedSessionCookies) responseHeaders.append("set-cookie", cookie);
-    return new Response(null, { status: 302, headers: responseHeaders });
-  });
+app.get("/logout-all/:returnTo", async (c) => {
+  const returnClient = parseLogoutReturn(c.req.param("returnTo"));
+  if (!returnClient) return c.json({ error: "invalid_logout_return" }, 400);
+  const registrations = await db.select({ clientId: applications.clientId, displayName: applications.displayName,
+    publicOrigin: applications.publicOrigin, postLogoutRedirectUris: oauthClient.postLogoutRedirectUris, metadata: oauthClient.metadata })
+    .from(applications).innerJoin(oauthClient, eq(oauthClient.clientId, applications.clientId))
+    .where(and(eq(applications.enabled, true), eq(oauthClient.disabled, false), inArray(applications.clientId, [...trustedClientIds])));
+  const plan = logoutPlan(registrations, returnClient);
+  if (!plan) return c.json({ error: "invalid_logout_return" }, 400);
+  const headers = new Headers(c.req.raw.headers);
+  headers.set("origin", authOrigin);
+  const signOut = await auth.api.signOutLinkedApplications({ headers, asResponse: true });
+  if (!signOut.ok) return c.json({ error: "logout_failed" }, 503);
+  const responseHeaders = new Headers({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+  for (const cookie of signOut.headers.getSetCookie()) responseHeaders.append("set-cookie", cookie);
+  responseHeaders.set("Content-Security-Policy", `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src ${[...new Set(plan.targets.map((target) => target.origin))].join(" ") || "'none'"}; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`);
+  responseHeaders.set("Referrer-Policy", "origin");
+  return new Response(renderLogoutPage(plan, crypto.randomUUID()), { status: 200, headers: responseHeaders });
+});
 
   app.get("/consent", (c) =>
     c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Consent · SMZ Identity</title></head><body><main><h1>Application access</h1><p>This screen is a fallback; seeded first-party clients normally skip consent.</p><form method="post"><button name="accept" value="true">Allow</button><button name="accept" value="false">Deny</button></form></main></body></html>`),
@@ -198,6 +203,7 @@ export function createApp(config: RuntimeConfig, db: Database) {
         !clientId ||
         !hasOnlyExpectedAudiences(payload.aud, directoryAudience, `${config.AUTH_ISSUER}/oauth2/userinfo`)
       ) return c.json({ error: "invalid_token_context" }, 401);
+      if (!(await hasLiveSession(db, personId, payload.sid))) return c.json({ error: "access_revoked" }, 403);
       const context = await getAccessContext(personId, clientId);
       if (!context) {
         await recordAuditEvent({ eventType: "directory.access.denied", actor: "directory-api", personId, clientId });

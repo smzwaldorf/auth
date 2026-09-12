@@ -222,7 +222,7 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
           public: application.clientType === "public",
           type: "web",
           requirePKCE: true,
-          metadata: { clientId: application.clientId },
+          metadata: { clientId: application.clientId, ...(application.frontChannelLogoutUri ? { frontChannelLogoutUri: application.frontChannelLogoutUri } : {}) },
         })
         .onConflictDoUpdate({
           target: oauthClient.clientId,
@@ -243,7 +243,7 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
             public: application.clientType === "public",
             type: "web",
             requirePKCE: true,
-            metadata: { clientId: application.clientId },
+            metadata: { clientId: application.clientId, ...(application.frontChannelLogoutUri ? { frontChannelLogoutUri: application.frontChannelLogoutUri } : {}) },
           },
         });
 
