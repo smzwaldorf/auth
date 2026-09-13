@@ -1,0 +1,21 @@
+name: Inspect staging users (read only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Read all user identities, roles and grants
+        run: node scripts/inspect-users.mjs
+        env:
+          DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
