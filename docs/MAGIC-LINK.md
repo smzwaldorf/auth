@@ -26,3 +26,7 @@ Use the same browser that initiated login so client state/PKCE remains available
 ## Verification
 
 Integration tests capture email in memory without sending: both clients' actual code exchanges, hashed storage, five-minute expiry enforcement, sequential/concurrent reuse across Auth instances, revoked invitation, unknown/unselected identities, forged continuation, password endpoint rejection, sender errors and form submission. Unit tests cover Resend payload/failure and staging configuration. Run on a disposable database only. Browser form submission was checked with a local capture mailer; full staging mailbox/browser testing still requires the setup above.
+
+## Approved CMS access
+
+On September 13 the user additionally approved CMS access for both staging identities. `apply-staging-cms-access.ts` grants the shared `email-cms` admission once and verifies both public and confidential CMS clients. Admin and parent roles remain unchanged. A recorded migration never restores later revoked access. Request a fresh link from the CMS login page; previously expired links remain invalid.

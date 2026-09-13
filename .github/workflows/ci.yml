@@ -119,6 +119,17 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           APP_B_CLIENT_SECRET: ${{ secrets.APP_B_CLIENT_SECRET }}
+      - name: Grant and verify approved CMS access once
+        if: vars.MAGIC_LINK_ENABLED == 'true'
+        run: npx tsx packages/auth-server/src/seed/apply-staging-cms-access.ts
+        env:
+          DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
+          NODE_ENV: production
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          APP_B_CLIENT_SECRET: ${{ secrets.APP_B_CLIENT_SECRET }}
       - run: npm run build:app-a
         if: vars.DEPLOY_DEMO_APPS == 'true' && vars.DEPLOY_PAGES != 'false'
       - name: Restrict App A logout framing to Auth

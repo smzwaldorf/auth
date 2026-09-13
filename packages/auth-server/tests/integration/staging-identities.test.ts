@@ -9,9 +9,12 @@ import { addStagingIdentities, approvedStagingIdentities, stagingIdentityMigrati
 import { applyDirectorySeed } from "../../src/seed/apply.js";
 import { validateDirectorySeed } from "../../src/seed/model.js";
 import { loginAllowed } from "../../src/login-policy.js";
+import { grantStagingCmsAccess, stagingCmsMigration } from "../../src/seed/staging-cms-access.js";
+import { createDirectory } from "../../src/directory/service.js";
 const emails = approvedStagingIdentities.map(p => p.email);
 const selectedConfig = { ...config, STAGING_ADMIN_EMAIL: emails[0]!, STAGING_PARENT_EMAIL: emails[1]! };
 async function cleanup() {
+  await db.delete(auditEvents).where(eq(auditEvents.eventType, stagingCmsMigration));
   await db.delete(people).where(inArray(people.normalizedLoginEmail, emails));
   await db.delete(user).where(inArray(user.email, emails));
   await db.delete(auditEvents).where(eq(auditEvents.eventType, stagingIdentityMigration));
@@ -20,7 +23,9 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("approved staging
   beforeAll(async () => {
     const url = new URL(config.DATABASE_URL);
     if (!["localhost", "127.0.0.1"].includes(url.hostname) || !/^\/(smz_identity|smz_magic_test_\d+)$/.test(url.pathname)) throw new Error("Disposable local test database required");
-    await applyDirectorySeed(validateDirectorySeed(JSON.parse(fs.readFileSync(path.resolve("seeds/directory.seed.example.json"), "utf8"))));
+    const seed = JSON.parse(fs.readFileSync(path.resolve("seeds/directory.seed.example.json"), "utf8"));
+    seed.applications.push(...["email-cms", "email-cms-server"].map(clientId => ({ ...seed.applications[0], clientId })));
+    await applyDirectorySeed(validateDirectorySeed(seed));
   });
   beforeEach(cleanup);
   afterAll(async () => { await cleanup(); await closeDatabase(); });
@@ -38,6 +43,20 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("approved staging
         expect(await loginAllowed(db, selectedConfig, person!.id)).toBe(false);
       }
     }
+  });
+  it("grants both CMS clients without changing roles and preserves later revocation", async () => {
+    await addStagingIdentities(db);
+    await grantStagingCmsAccess(db);
+    for (const { email, role } of approvedStagingIdentities) {
+      const [person] = await db.select().from(people).where(eq(people.normalizedLoginEmail, email));
+      const directory = createDirectory(db, selectedConfig);
+      expect(await directory.hasLiveAppAccess(person!.id, "email-cms")).toBe(true);
+      expect(await directory.hasLiveAppAccess(person!.id, "email-cms-server")).toBe(true);
+      expect((await db.select().from(personRoles).where(eq(personRoles.personId, person!.id))).map(r => r.role)).toEqual([role]);
+    }
+    await db.update(appAccess).set({ status: "revoked" }).where(eq(appAccess.clientId, "email-cms"));
+    await grantStagingCmsAccess(db);
+    expect((await db.select().from(appAccess).where(eq(appAccess.clientId, "email-cms"))).every(a => a.status === "revoked")).toBe(true);
   });
   it("is idempotent and never restores a revoked invitation", async () => {
     await addStagingIdentities(db);
