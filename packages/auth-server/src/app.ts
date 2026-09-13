@@ -1,3 +1,5 @@
+import { bodyLimit } from "hono/body-limit";
+import type { LoginMailer } from "./magic-link/mail.js";
 import { isAPIError } from "better-auth/api";
 import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resource-client";
 import { and, eq, inArray } from "drizzle-orm";
@@ -15,12 +17,13 @@ import { createDirectory } from "./directory/service.js";
 import { hasOnlyExpectedAudiences } from "./directory/token-policy.js";
 import { logoutPlan, renderLogoutPage, parseLogoutReturn } from "./logout-coordinator.js";
 
-export function createApp(config: RuntimeConfig, db: Database) {
+
+export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMailer) {
   const { authOrigin, directoryAudience, trustedClientIds } = runtimeUrls(config);
-  const auth = createAuth(config, db);
+  const auth = createAuth(config, db, mailer);
   const googleConfigured = Boolean(config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET);
   const recordAuditEvent = createAuditRecorder(db);
-  const { getAccessContext } = createDirectory(db);
+  const { getAccessContext } = createDirectory(db, config);
   const resourceClient = createAuthClient({ plugins: [oauthProviderResourceClient(auth)] });
   const app = new Hono();
 
@@ -43,7 +46,7 @@ export function createApp(config: RuntimeConfig, db: Database) {
     return null;
   }
 
-  app.use("*", (c, next) => secureHeaders({ referrerPolicy: c.req.path.startsWith("/logout-all/") ? "origin" : "no-referrer" })(c, next));
+  app.use("*", (c, next) => secureHeaders({ referrerPolicy: c.req.path === "/sign-in" ? "same-origin" : c.req.path.startsWith("/logout-all/") ? "origin" : "no-referrer" })(c, next));
   app.use("*", async (c, next) => { c.header("Cache-Control", "no-store"); await next(); });
   app.use("/api/*", async (c, next) => {
     const origin = c.req.header("origin");
@@ -108,12 +111,33 @@ export function createApp(config: RuntimeConfig, db: Database) {
     }),
   );
 
+  app.use("/sign-in/magic-link", bodyLimit({ maxSize: 16384 }));
+  app.use("/api/auth/sign-in/magic-link", bodyLimit({ maxSize: 16384 }));
+  app.get("/magic-link/error", c => c.html('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign-in link unavailable</title><main><h1>This sign-in link is unavailable</h1><p>It may have expired, already been used, or your access may have changed.</p><a href="/">Return to your application to request another link</a></main></html>'));
+  app.post("/sign-in/magic-link", async c => {
+    if (c.req.header("origin") !== authOrigin) return c.json({ error: "origin_not_allowed" }, 403);
+    const body = await c.req.parseBody();
+    const headers = new Headers(c.req.raw.headers);
+    headers.set("content-type", "application/json");
+    headers.delete("content-length");
+    const response = await auth.handler(new Request(`${config.AUTH_ISSUER}/sign-in/magic-link`, {
+      method: "POST", headers, body: JSON.stringify({ email: body.email, oauth_query: body.oauth_query }),
+    }));
+    const ok = response.ok;
+    const html = `<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${ok ? "Check your email" : "Unable to send link"}</title><main><h1>${ok ? "Check your email" : "Unable to send link"}</h1><p>${ok ? "If your email is approved, you will receive a sign-in link. It expires in five minutes and can be used once. Open it in the browser where you started signing in." : "Please wait a minute and start again from your application. If this continues, contact your administrator."}</p><a href="/">Return to applications</a></main></html>`;
+    const outputHeaders = new Headers(response.headers);
+    outputHeaders.set("content-type", "text/html; charset=utf-8");
+    outputHeaders.delete("content-length");
+    return new Response(html, { status: response.status, headers: outputHeaders });
+  });
+
   app.get("/sign-in", (c) => {
     const query = new URL(c.req.url).searchParams;
     if (!query.has("client_id")) return c.redirect("/");
     const oauthQuery = new URL(c.req.url).search.slice(1);
     const googleHref = `/sign-in/google?oauth_query=${encodeURIComponent(oauthQuery)}`;
-    return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · SMZ Identity</title><style>body{font:16px system-ui;margin:0;background:#f2eee8;color:#28211d}main{max-width:520px;margin:12vh auto;padding:36px;border-radius:24px;background:#fff;box-shadow:0 24px 80px #38271822}a{display:inline-flex;padding:13px 18px;border-radius:12px;color:#fff;background:#8b3e25;text-decoration:none;font-weight:700}.note{color:#75675d}</style></head><body><main><h1>Sign in to SMZ</h1><p>Use the exact verified Google email pre-approved by the school directory.</p>${googleConfigured ? `<a href="${googleHref}">Continue with Google</a>` : '<p><strong>Google credentials are not configured.</strong></p>'}<p class="note">Students cannot sign in in version 1.</p></main></body></html>`);
+    const magicForm = config.MAGIC_LINK_ENABLED === "true" ? `<section><h2>Sign in by email</h2><form method="post" action="/sign-in/magic-link"><input type="hidden" name="oauth_query" value="${escapeHtml(oauthQuery)}"><label for="login-email">Approved email address</label><input id="login-email" name="email" type="email" autocomplete="email" required maxlength="254" style="display:block;width:100%;box-sizing:border-box;padding:12px;margin:12px 0"><button type="submit" style="padding:12px 18px">Email me a sign-in link</button></form><p class="note">The link expires in five minutes and works once.</p></section>` : "";
+    return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · SMZ Identity</title><style>body{font:16px system-ui;margin:0;background:#f2eee8;color:#28211d}main{max-width:520px;margin:12vh auto;padding:36px;border-radius:24px;background:#fff;box-shadow:0 24px 80px #38271822}a{display:inline-flex;padding:13px 18px;border-radius:12px;color:#fff;background:#8b3e25;text-decoration:none;font-weight:700}.note{color:#75675d}</style></head><body><main><h1>Sign in to SMZ</h1><p>Use the email address pre-approved by the school directory.</p>${googleConfigured ? `<a href="${googleHref}">Continue with Google</a>` : '<p><strong>Google credentials are not configured.</strong></p>'}${magicForm}<p class="note">Students cannot sign in in version 1.</p></main></body></html>`);
   });
 
   app.get("/sign-in/google", async (c) => {

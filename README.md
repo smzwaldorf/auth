@@ -1,5 +1,7 @@
 # SMZ Identity and single-school directory
 
+Magic-link login now coexists with Google; see [setup and validation](docs/MAGIC-LINK.md). The existing hosted deployment is staging; the historical GitHub `production` environment name remains until secrets can be safely migrated.
+
 A first-party identity service for one school, with Node development entrypoints and Cloudflare deployment adapters: Pages for App A, Workers for Auth and App B, and PlanetScale Postgres through Hyperdrive.
 
 Only Auth connects to the `smz-auth` logical database through Hyperdrive in the $5 `smzwaldorf` cluster. The cluster also contains the empty `smz-cms` logical database. App A and App B are database-free OAuth test clients. Enable `DEPLOY_DEMO_APPS=true` to publish them and register their exact production URLs through commit-triggered CI.
@@ -8,7 +10,7 @@ See [Cloudflare deployment](docs/CLOUDFLARE.md) for infrastructure configuration
 
 - **Identity service:** Hono + Better Auth + `@better-auth/oauth-provider`
 - **Persistence:** PostgreSQL + Drizzle, split into `auth` and `directory` schemas
-- **Upstream login:** Google only, exact verified email, pre-approved adults only
+- **Upstream login:** Google plus optional magic links, exact approved email, pre-approved adults only
 - **App A:** Vite/React public OIDC client using Authorization Code + PKCE S256
 - **App B:** Hono confidential OIDC client using Authorization Code + PKCE S256 and an encrypted HttpOnly cookie session (legacy client ID `express-app`)
 - **Authorization context:** live `GET /api/directory/v1/me/access-context`; roles and relationships are not embedded in ID tokens
@@ -16,6 +18,7 @@ See [Cloudflare deployment](docs/CLOUDFLARE.md) for infrastructure configuration
 ```mermaid
 flowchart LR
   Google["Google OAuth"] --> Auth["Hono + Better Auth :3000"]
+  Email["Resend magic link · Aida sender"] --> Auth
   Postgres[("PostgreSQL")] --> Auth
   Auth --> OIDC["OAuth 2.1 / OIDC"]
   Auth --> Directory["Directory API"]

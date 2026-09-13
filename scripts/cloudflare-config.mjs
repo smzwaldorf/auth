@@ -22,7 +22,10 @@ for (const [name, source, hostname] of [["auth", "packages/auth-server", new URL
   delete config.$schema;
   config.main = path.resolve(source, config.main);
   config.account_id = account;
-  config.vars = vars;
+  config.vars = { ...vars };
+  if (name === "auth") for (const key of ["MAGIC_LINK_ENABLED", "MAGIC_LINK_FROM", "STAGING_ADMIN_EMAIL", "STAGING_PARENT_EMAIL"]) {
+    if (process.env[key]) config.vars[key] = process.env[key];
+  }
   if (name === "auth") config.hyperdrive = [{ binding: "HYPERDRIVE", id }];
   else { delete config.hyperdrive; delete config.triggers; }
   if (hostname.endsWith(".workers.dev")) {

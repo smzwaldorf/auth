@@ -1,4 +1,6 @@
 > Session update (2026-09-13): CMS now has a confidential `email-cms-server` client for its backend session. Its fixed admission mapping reuses the existing `email-cms` grant and additionally requires the server application to be enabled. No new person grants are created. The public client remains registered for old open tabs during cutover.
+
+Magic-link login now coexists with Google; see [setup and validation](MAGIC-LINK.md). The existing hosted deployment is staging; the historical GitHub `production` environment name remains until secrets can be safely migrated.
 >
 > Central sessions use a 30-day rolling lifetime. Verified directory use extends a still-live session at most daily; it cannot resurrect a deleted or expired session. Expired central sessions return `401 session_expired`, missing/deleted sessions and revoked admission return `403 access_revoked`, and infrastructure failures return `503 identity_unavailable`. Access tokens remain 15 minutes and refresh tokens 30 days. Rotating refresh tokens support a 120-second same-request replay window for lost responses.
 >
@@ -26,8 +28,13 @@ sequenceDiagram
 
   Browser->>App: Sign in
   App->>Auth: authorize + state + PKCE S256 + resource
-  Auth->>Google: openid profile email
-  Google-->>Auth: verified identity
+  alt Google login
+    Auth->>Google: openid profile email
+    Google-->>Auth: verified identity
+  else Magic-link login
+    Auth-->>Browser: Email five-minute single-use link via Resend
+    Browser->>Auth: Redeem link and prove email ownership
+  end
   Auth->>DB: match pre-seeded normalized email
   Auth->>DB: check active adult and app access
   Auth-->>App: authorization code

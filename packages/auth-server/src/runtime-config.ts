@@ -2,6 +2,11 @@ import { z } from "zod";
 
 const origin = z.string().url().refine((value) => new URL(value).origin === value, "Use an origin without a trailing slash or path");
 const schema = z.object({
+  MAGIC_LINK_ENABLED: z.enum(["true", "false"]).default("false"),
+  MAGIC_LINK_FROM: z.string().refine(v => v === "Aida <info@useaida.app>", "Use the approved sender").default("Aida <info@useaida.app>"),
+  RESEND_API_KEY: z.string().default(""),
+  STAGING_ADMIN_EMAIL: z.string().trim().toLowerCase().default(""),
+  STAGING_PARENT_EMAIL: z.string().trim().toLowerCase().default(""),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().min(1).default("postgres://smz:smz@localhost:5432/smz_identity"),
   AUTH_ISSUER: z.string().url().default("http://localhost:3000/api/auth"),
@@ -16,6 +21,12 @@ const schema = z.object({
 export type RuntimeConfig = z.infer<typeof schema>;
 export function parseRuntimeConfig(input: Record<string, unknown>): RuntimeConfig {
   const config = schema.parse(input);
+  if (config.STAGING_ADMIN_EMAIL || config.STAGING_PARENT_EMAIL || (config.NODE_ENV === "production" && config.MAGIC_LINK_ENABLED === "true")) {
+    z.email().parse(config.STAGING_ADMIN_EMAIL);
+    z.email().parse(config.STAGING_PARENT_EMAIL);
+    if (config.STAGING_ADMIN_EMAIL === config.STAGING_PARENT_EMAIL) throw new Error("Select two distinct staging identities");
+  }
+  if (config.NODE_ENV === "production" && config.MAGIC_LINK_ENABLED === "true" && !config.RESEND_API_KEY.startsWith("re_")) throw new Error("Configure RESEND_API_KEY before enabling magic links");
   const issuer = new URL(config.AUTH_ISSUER);
   if (issuer.pathname !== "/api/auth" || issuer.search || issuer.hash || issuer.username || issuer.password) throw new Error("AUTH_ISSUER must end exactly in /api/auth");
   if (config.NODE_ENV === "production") {

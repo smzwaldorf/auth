@@ -17,7 +17,7 @@ import { oauthAccessToken, oauthRefreshToken, session, user } from "../../src/db
 import { validateDirectorySeed } from "../../src/seed/model.js";
 function requireTestDatabase() {
  const url = new URL(config.DATABASE_URL);
- if (!process.env.DATABASE_URL || !["localhost", "127.0.0.1"].includes(url.hostname) || url.pathname !== "/smz_identity") throw new Error("Requires explicit disposable local smz_identity database");
+ if (!process.env.DATABASE_URL || !["localhost", "127.0.0.1"].includes(url.hostname) || !(url.pathname === "/smz_identity" || /^\/smz_magic_test_\d+$/.test(url.pathname))) throw new Error("Requires explicit disposable local smz_identity database");
 }
 
 const enabled = process.env.RUN_DB_TESTS === "true";

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 const groups = { auth: ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "APP_B_CLIENT_SECRET"], "app-b": ["APP_B_CLIENT_SECRET", "APP_B_COOKIE_SECRET"] };
+if (process.env.MAGIC_LINK_ENABLED === "true") groups.auth.push("RESEND_API_KEY");
 for (const [name, keys] of Object.entries(groups)) {
   if (name === "app-b" && process.env.DEPLOY_DEMO_APPS !== "true") continue;
   const secrets = {};

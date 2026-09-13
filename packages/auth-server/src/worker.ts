@@ -2,6 +2,11 @@ import { createApp } from "./app.js";
 import { createDatabase } from "./db/database.js";
 import { parseRuntimeConfig } from "./runtime-config.js";
 export interface Env {
+  MAGIC_LINK_ENABLED?: string;
+  MAGIC_LINK_FROM?: string;
+  RESEND_API_KEY?: string;
+  STAGING_ADMIN_EMAIL?: string;
+  STAGING_PARENT_EMAIL?: string;
   HYPERDRIVE: { connectionString: string };
   AUTH_ISSUER: string;
   APP_A_ORIGIN: string;

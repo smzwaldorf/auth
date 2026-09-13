@@ -4,6 +4,9 @@ import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { createGlobalLogout } from "./global-logout.js";
+import { loginAllowed } from "./login-policy.js";
+import { magicLinkPlugins } from "./magic-link/plugin.js";
+import type { LoginMailer } from "./magic-link/mail.js";
 import { jwt } from "better-auth/plugins";
 
 import { createAuditRecorder } from "./audit-service.js";
@@ -14,10 +17,11 @@ import * as schema from "./db/schema.js";
 import { createDirectory } from "./directory/service.js";
 import { normalizeEmail } from "./seed/model.js";
 
-export function createAuth(config: RuntimeConfig, db: Database) {
+
+export function createAuth(config: RuntimeConfig, db: Database, mailer?: LoginMailer) {
   const { directoryAudience, trustedClientIds, authOrigin } = runtimeUrls(config);
   const recordAuditEvent = createAuditRecorder(db);
-  const { hasLiveAppAccess } = createDirectory(db);
+  const { hasLiveAppAccess } = createDirectory(db, config);
   async function activeInvitationForUser(userId: string) {
     const now = new Date();
     const [row] = await db
@@ -114,7 +118,7 @@ export function createAuth(config: RuntimeConfig, db: Database) {
               await recordAuditEvent({ eventType: "identity.login.denied", actor: "better-auth", personId: newAccount.userId, detail: { reason: "provider_not_allowed" } });
               throw accessDenied("Google is the only enabled identity provider");
             }
-            if (!(await activeInvitationForUser(newAccount.userId))) {
+            if (!(await activeInvitationForUser(newAccount.userId)) || !(await loginAllowed(db, config, newAccount.userId))) {
               await recordAuditEvent({ eventType: "identity.login.denied", actor: "better-auth", personId: newAccount.userId, detail: { reason: "invitation_inactive" } });
               throw accessDenied("This login invitation is missing, expired, or inactive");
             }
@@ -137,6 +141,7 @@ export function createAuth(config: RuntimeConfig, db: Database) {
       session: {
         create: {
           before: async (newSession) => {
+            if (!(await loginAllowed(db, config, newSession.userId))) throw accessDenied("Login invitation or account access is inactive");
             const [person] = await db
               .select({ status: people.status, kind: people.kind })
               .from(people)
@@ -148,13 +153,18 @@ export function createAuth(config: RuntimeConfig, db: Database) {
             }
             return { data: newSession };
           },
-          after: async (newSession) => {
+          after: async (newSession, ctx) => {
+            if (ctx?.path === "/magic-link/verify") {
+              await db.update(loginInvitations).set({ status: "activated", activatedAt: new Date(), updatedAt: new Date() })
+                .where(and(eq(loginInvitations.personId, newSession.userId), eq(loginInvitations.status, "pending")));
+            }
             await recordAuditEvent({ eventType: "identity.session.created", actor: "better-auth", personId: newSession.userId });
           },
         },
       },
     },
     plugins: [
+      ...magicLinkPlugins(config, db, mailer),
       createGlobalLogout(db),
       jwt({ jwt: { issuer: config.AUTH_ISSUER } }),
       oauthProvider({

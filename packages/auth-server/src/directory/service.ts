@@ -1,3 +1,4 @@
+import { loginAllowed } from "../login-policy.js";
 import { and, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 
 import type { Database } from "../db/database.js";
@@ -52,8 +53,11 @@ function todayUtc(date = new Date()): string {
   return date.toISOString().slice(0, 10);
 }
 
-export function createDirectory(db: Database) {
+import type { RuntimeConfig } from "../runtime-config.js";
+
+export function createDirectory(db: Database, config?: RuntimeConfig) {
   async function hasLiveAppAccess(personId: string, clientId: string): Promise<boolean> {
+    if (config && !(await loginAllowed(db, config, personId))) return false;
     // Two technical clients, one reviewed CMS admission. No person grants are copied.
     if (clientId === "email-cms-server") {
       const [serverApp] = await db.select({ enabled: applications.enabled }).from(applications).where(eq(applications.clientId, clientId)).limit(1);

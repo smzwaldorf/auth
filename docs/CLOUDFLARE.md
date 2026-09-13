@@ -1,5 +1,7 @@
 # Cloudflare deployment
 
+Magic-link login now coexists with Google; see [setup and validation](MAGIC-LINK.md). The existing hosted deployment is staging; the historical GitHub `production` environment name remains until secrets can be safely migrated.
+
 ## Current provisioning scope
 
 Cluster `smzwaldorf/smzwaldorf` contains the logical databases `smz-auth` (Auth) and `smz-cms` (empty, reserved for CMS). They share one PlanetScale Postgres 17, Tokyo, PS-5 single node at $5/month base, 10 GB storage cap, billed through Cloudflare account 善美真. Only Auth has a Hyperdrive binding, with query caching disabled. Both test clients run without database access.

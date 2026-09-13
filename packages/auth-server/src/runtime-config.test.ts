@@ -15,3 +15,11 @@ it("enables CMS only with an explicit secure deployment origin", () => {
   expect(runtimeUrls(parseRuntimeConfig({ ...production, CMS_ORIGIN: "https://smz-cms.pages.dev" })).trustedClientIds.has("email-cms")).toBe(true);
   for (const CMS_ORIGIN of ["http://localhost:5174", "https://cms.example.com", "https://smz-cms.pages.dev/path", "https://user:password@smz-cms.pages.dev"]) expect(() => parseRuntimeConfig({ ...production, CMS_ORIGIN })).toThrow();
 });
+
+it("requires two distinct confirmed staging emails and delivery credentials before hosted magic links", () => {
+  expect(() => parseRuntimeConfig({ ...production, MAGIC_LINK_ENABLED: "true" })).toThrow();
+  const enabled = { ...production, MAGIC_LINK_ENABLED: "true", STAGING_ADMIN_EMAIL: "admin@example.invalid", STAGING_PARENT_EMAIL: "parent@example.invalid", RESEND_API_KEY: "re_test" };
+  expect(parseRuntimeConfig(enabled).MAGIC_LINK_FROM).toBe("Aida <info@useaida.app>");
+  expect(() => parseRuntimeConfig({ ...enabled, STAGING_PARENT_EMAIL: enabled.STAGING_ADMIN_EMAIL })).toThrow();
+  expect(() => parseRuntimeConfig({ ...enabled, RESEND_API_KEY: "" })).toThrow();
+});
