@@ -16,6 +16,10 @@ SMZ Identity owns authentication, adult/student identity records, school roles, 
 
 Applications still own action-level authorization and domain data. A `teacher` role or effective class scope is context, not permission to edit, publish, bill, deliver, or administer data in every app.
 
+## Central user administration
+
+The Auth service serves `/admin` using its existing Better Auth session. A live directory `admin` role plus current login eligibility authorizes directory user administration. Changes are transactional and audited; edits to other users revoke their central sessions and OAuth tokens. The `/admin/applications` view groups registrations by normalized site origin and manages access for all current login clients at a site. Site revocation removes those clients’ OAuth grants while preserving the central session and unrelated sites. Existing mixed grants remain visible as Partial until explicitly reconciled. The user editor uses the same groups; configuration fingerprints reject stale client membership. Runtime admission remains per-client, with the existing shared CMS admission mapping. The panel manages adult approval, roles, and application admission, while family/class relationships remain seed-managed. See [User administration](ADMIN.md) for access, constraints, and validation.
+
 ## Token and request flow
 
 ```mermaid
@@ -84,3 +88,9 @@ Set production `CMS_ORIGIN=https://smz-cms.pages.dev` to enable the public `emai
 The registered logout coordinator supports all enabled trusted clients, preserving App A/B aliases. It deletes the initiating central session's linked grants transactionally, leaves other devices' sessions intact, and verifies live session IDs on directory requests. Cleanup frames require exact registered origins and one-time state; unconfirmed cleanup is reported after 3.5 seconds. App A's deployed `/logout/local` headers permit only Auth framing. App B clears its cookie chunks and acknowledges Auth without following a caller redirect. Browser restrictions may prevent third-party local cleanup, but cannot restore central authorization.
 
 Release validation includes PostgreSQL integration tests for CMS/App A/App B initiation, token and refresh rejection, other-device preservation, invalid returns and database failures. Production Google/browser verification remains a separate release check.
+
+Administrator-created application clients are registered transactionally through the site admin panel, with exact same-site callback URLs, PKCE, and directory resource permission. Browser trusted origins and launcher entries read enabled registrations at runtime. Registration never grants user admission; site access remains an explicit administrator action. Confidential client secrets are displayed once and persisted only as hashes.
+
+## Application admission policy (2026-09-14)
+
+This supersedes earlier per-client and per-site grant descriptions in this document. All approved, active adult accounts automatically have access to all enabled registered applications, including new clients. Legacy app_access rows are ignored for admission. Account status, login approval, staging restrictions, and OAuth/application enabled flags remain enforced. Each consuming application owns its action permissions. Admin now lists applications and configures clients without per-user grant controls.

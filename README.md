@@ -14,6 +14,7 @@ See [Cloudflare deployment](docs/CLOUDFLARE.md) for infrastructure configuration
 - **App A:** Vite/React public OIDC client using Authorization Code + PKCE S256
 - **App B:** Hono confidential OIDC client using Authorization Code + PKCE S256 and an encrypted HttpOnly cookie session (legacy client ID `express-app`)
 - **Authorization context:** live `GET /api/directory/v1/me/access-context`; roles and relationships are not embedded in ID tokens
+- **School directory:** `GET /api/directory/v1/me/directory` adds scoped names, families, classes and memberships for application views. See [development school setup](docs/DEVELOPMENT-LOGIN.md#development-school-environment).
 
 ```mermaid
 flowchart LR
@@ -49,6 +50,8 @@ not expose these services as a production deployment.
 
 Open:
 
+- Site access administration: http://localhost:3000/admin/applications
+- User administration: http://localhost:3000/admin ([access rules and operations](docs/ADMIN.md))
 - Auth service: http://localhost:3000
 - OIDC discovery: http://localhost:3000/api/auth/.well-known/openid-configuration
 - App A: http://localhost:5173
@@ -94,3 +97,9 @@ Set production `CMS_ORIGIN=https://smz-cms.pages.dev` to enable the public `emai
 The registered logout coordinator supports all enabled trusted clients, preserving App A/B aliases. It deletes the initiating central session's linked grants transactionally, leaves other devices' sessions intact, and verifies live session IDs on directory requests. Cleanup frames require exact registered origins and one-time state; unconfirmed cleanup is reported after 3.5 seconds. App A's deployed `/logout/local` headers permit only Auth framing. App B clears its cookie chunks and acknowledges Auth without following a caller redirect. Browser restrictions may prevent third-party local cleanup, but cannot restore central authorization.
 
 Release validation includes PostgreSQL integration tests for CMS/App A/App B initiation, token and refresh rejection, other-device preservation, invalid returns and database failures. Production Google/browser verification remains a separate release check.
+
+To connect a new website, open **Admin → Site access → Add application**. The setup page provides the OIDC configuration for browser or server apps. See [application setup](docs/ADMIN.md#add-an-application).
+
+## Application admission policy (2026-09-14)
+
+This supersedes earlier per-client and per-site grant descriptions in this document. All approved, active adult accounts automatically have access to all enabled registered applications, including new clients. Legacy app_access rows are ignored for admission. Account status, login approval, staging restrictions, and OAuth/application enabled flags remain enforced. Each consuming application owns its action permissions. Admin now lists applications and configures clients without per-user grant controls.

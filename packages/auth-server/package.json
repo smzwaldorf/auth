@@ -11,8 +11,10 @@
     "test:integration": "RUN_DB_TESTS=true vitest run tests/integration --no-file-parallelism",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "development:seed": "tsx src/development/seed-cli.ts",
     "directory:seed": "tsx src/seed/cli.ts",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "development:school": "tsx src/development/school-cli.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.2",

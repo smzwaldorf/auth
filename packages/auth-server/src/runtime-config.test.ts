@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseRuntimeConfig, runtimeUrls } from "./runtime-config.js";
-const production = { NODE_ENV: "production", AUTH_ISSUER: "https://identity.school.test/api/auth", APP_A_ORIGIN: "https://a.school.test", APP_B_ORIGIN: "https://b.school.test", BETTER_AUTH_SECRET: "x".repeat(40), APP_B_CLIENT_SECRET: "y".repeat(40), GOOGLE_CLIENT_ID: "google-client", GOOGLE_CLIENT_SECRET: "google-secret" };
+const production = { MAGIC_LINK_ENABLED: "false", NODE_ENV: "production", AUTH_ISSUER: "https://identity.school.test/api/auth", APP_A_ORIGIN: "https://a.school.test", APP_B_ORIGIN: "https://b.school.test", BETTER_AUTH_SECRET: "x".repeat(40), APP_B_CLIENT_SECRET: "y".repeat(40), GOOGLE_CLIENT_ID: "google-client", GOOGLE_CLIENT_SECRET: "google-secret" };
 describe("production runtime configuration", () => {
   it("derives resource audience from the deployed issuer", () => expect(runtimeUrls(parseRuntimeConfig(production)).directoryAudience).toBe("https://identity.school.test/api/directory/v1"));
   it("rejects implicit development secrets and insecure origins", () => {
@@ -22,4 +22,8 @@ it("requires two distinct confirmed staging emails and delivery credentials befo
   expect(parseRuntimeConfig(enabled).MAGIC_LINK_FROM).toBe("Aida <info@useaida.app>");
   expect(() => parseRuntimeConfig({ ...enabled, STAGING_PARENT_EMAIL: enabled.STAGING_ADMIN_EMAIL })).toThrow();
   expect(() => parseRuntimeConfig({ ...enabled, RESEND_API_KEY: "" })).toThrow();
+});
+
+it("keeps magic links enabled when no flag is supplied", () => {
+  expect(parseRuntimeConfig({}).MAGIC_LINK_ENABLED).toBe("true");
 });

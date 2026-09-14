@@ -4,6 +4,7 @@ import { magicLink } from "better-auth/plugins";
 import { eq, lte, sql } from "drizzle-orm";
 import type { Database } from "../db/database.js";
 import { user, verification } from "../db/schema.js";
+import { isDevelopmentIdentity } from "../development/policy.js";
 import { loginAllowed } from "../login-policy.js";
 import type { RuntimeConfig } from "../runtime-config.js";
 import { normalizeEmail } from "../seed/model.js";
@@ -41,7 +42,7 @@ export function magicLinkPlugins(config: RuntimeConfig, db: Database, mailer: Lo
       if (record && record.expiresAt > new Date()) {
         const { email } = JSON.parse(record.value) as { email: string };
         const [candidate] = await db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
-        if (!candidate || !(await loginAllowed(db, config, candidate.id))) {
+        if (!candidate || isDevelopmentIdentity(candidate.id) || !(await loginAllowed(db, config, candidate.id))) {
           await db.delete(verification).where(eq(verification.id, record.id));
           throw ctx.redirect(`${new URL(config.AUTH_ISSUER).origin}/magic-link/error`);
         }
@@ -66,7 +67,7 @@ export function magicLinkPlugins(config: RuntimeConfig, db: Database, mailer: Lo
       ctx.body.errorCallbackURL = `${new URL(config.AUTH_ISSUER).origin}/magic-link/error`;
       delete ctx.body.newUserCallbackURL;
       const [candidate] = await db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
-      if (!candidate || !(await loginAllowed(db, config, candidate.id))) return ctx.json({ status: true });
+      if (!candidate || isDevelopmentIdentity(candidate.id) || !(await loginAllowed(db, config, candidate.id))) return ctx.json({ status: true });
     }) }] },
   }];
 }

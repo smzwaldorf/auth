@@ -2,11 +2,13 @@ import { z } from "zod";
 
 const origin = z.string().url().refine((value) => new URL(value).origin === value, "Use an origin without a trailing slash or path");
 const schema = z.object({
-  MAGIC_LINK_ENABLED: z.enum(["true", "false"]).default("false"),
+  MAGIC_LINK_ENABLED: z.enum(["true", "false"]).default("true"),
   MAGIC_LINK_FROM: z.string().refine(v => v === "Aida <info@useaida.app>", "Use the approved sender").default("Aida <info@useaida.app>"),
   RESEND_API_KEY: z.string().default(""),
   STAGING_ADMIN_EMAIL: z.string().trim().toLowerCase().default(""),
   STAGING_PARENT_EMAIL: z.string().trim().toLowerCase().default(""),
+  ENABLE_DEV_LOGIN: z.enum(["true", "false"]).default("false"),
+  DEV_LOGIN_DATABASE_NAME: z.string().default(""),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().min(1).default("postgres://smz:smz@localhost:5432/smz_identity"),
   AUTH_ISSUER: z.string().url().default("http://localhost:3000/api/auth"),
@@ -43,5 +45,5 @@ export function parseRuntimeConfig(input: Record<string, unknown>): RuntimeConfi
 }
 export function runtimeUrls(config: RuntimeConfig) {
   const authOrigin = new URL(config.AUTH_ISSUER).origin;
-  return { authOrigin, directoryAudience: `${authOrigin}/api/directory/v1`, trustedClientIds: new Set(["vite-app", "express-app", ...(config.CMS_ORIGIN ? ["email-cms", "email-cms-server"] : [])]) };
+  return { authOrigin, directoryAudience: `${authOrigin}/api/directory/v1`, trustedClientIds: new Set(["smz-admin", "vite-app", "express-app", ...(config.CMS_ORIGIN ? ["email-cms", "email-cms-server"] : [])]) };
 }

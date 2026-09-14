@@ -14,7 +14,7 @@ import type { LoginMail } from "../../src/magic-link/mail.js";
 const seed = validateDirectorySeed(JSON.parse(fs.readFileSync(path.resolve(process.cwd(), "seeds/directory.seed.example.json"), "utf8")));
 const testConfig = { ...config, MAGIC_LINK_ENABLED: "true" as const };
 const outbox: LoginMail[] = [];
-const auth = createAuth(testConfig, db, async mail => { outbox.push(mail); });
+const auth = createAuth(testConfig, db, undefined, async mail => { outbox.push(mail); });
 const origin = new URL(config.AUTH_ISSUER).origin;
 const email = seed.people[0]!.loginEmail!;
 const personId = seed.people[0]!.id;
@@ -63,7 +63,7 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("magic links", ()
     expect(responses.filter(r => r.headers.get("set-cookie")?.includes("session_token"))).toHaveLength(1);
   });
   it("fails closed for unselected staging accounts and never assigns roles", async () => {
-    const restricted = createAuth({ ...testConfig, STAGING_ADMIN_EMAIL: "admin@example.invalid", STAGING_PARENT_EMAIL: "parent@example.invalid" }, db, async mail => { outbox.push(mail); });
+    const restricted = createAuth({ ...testConfig, STAGING_ADMIN_EMAIL: "admin@example.invalid", STAGING_PARENT_EMAIL: "parent@example.invalid" }, db, undefined, async mail => { outbox.push(mail); });
     const query = await signedQuery();
     const response = await restricted.handler(new Request(`${config.AUTH_ISSUER}/sign-in/magic-link`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ email, oauth_query: query }) }));
     expect(response.status).toBe(200);
@@ -76,7 +76,7 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("magic links", ()
     expect(outbox).toHaveLength(0);
   });
   it("reports delivery failure and rejects foreign origins", async () => {
-    const failing = createAuth(testConfig, db, async () => { throw new Error("private provider detail"); });
+    const failing = createAuth(testConfig, db, undefined, async () => { throw new Error("private provider detail"); });
     const body = JSON.stringify({ email, oauth_query: await signedQuery() });
     const request = (requestOrigin: string) => new Request(`${config.AUTH_ISSUER}/sign-in/magic-link`, { method: "POST", headers: { origin: requestOrigin, "content-type": "application/json" }, body });
     expect((await failing.handler(request("https://foreign.example"))).status).toBe(403);

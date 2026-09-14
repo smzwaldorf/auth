@@ -3,7 +3,7 @@ import { and, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 
 import type { Database } from "../db/database.js";
 import {
-  appAccess,
+  oauthClient,
   applications,
   classMemberships,
   classes,
@@ -54,24 +54,17 @@ function todayUtc(date = new Date()): string {
 }
 
 import type { RuntimeConfig } from "../runtime-config.js";
+import { isDevelopmentIdentity } from "../development/policy.js";
+import { validDevelopmentIdentity } from "../development/identity.js";
 
 export function createDirectory(db: Database, config?: RuntimeConfig) {
   async function hasLiveAppAccess(personId: string, clientId: string): Promise<boolean> {
-    if (config && !(await loginAllowed(db, config, personId))) return false;
-    // Two technical clients, one reviewed CMS admission. No person grants are copied.
-    if (clientId === "email-cms-server") {
-      const [serverApp] = await db.select({ enabled: applications.enabled }).from(applications).where(eq(applications.clientId, clientId)).limit(1);
-      if (!serverApp?.enabled) return false;
-      clientId = "email-cms";
-    }
-    const [row] = await db
-      .select({ personStatus: people.status, kind: people.kind, accessStatus: appAccess.status, appEnabled: applications.enabled })
-      .from(people)
-      .innerJoin(appAccess, and(eq(appAccess.personId, people.id), eq(appAccess.clientId, clientId)))
-      .innerJoin(applications, eq(applications.clientId, appAccess.clientId))
-      .where(eq(people.id, personId))
-      .limit(1);
-    return row?.kind === "adult" && row.personStatus === "active" && row.accessStatus === "active" && row.appEnabled;
+    if (isDevelopmentIdentity(personId) && (!config || !(await validDevelopmentIdentity(db, config, personId)))) return false;
+    if (!isDevelopmentIdentity(personId) && !(await loginAllowed(db, config ?? {} as RuntimeConfig, personId))) return false;
+    const [row] = await db.select({ enabled: applications.enabled, disabled: oauthClient.disabled })
+      .from(applications).innerJoin(oauthClient, eq(oauthClient.clientId, applications.clientId))
+      .where(eq(applications.clientId, clientId)).limit(1);
+    return row?.enabled === true && row.disabled === false;
   }
 
   async function getAccessContext(personId: string, clientId: string, at = new Date()): Promise<AccessContext | null> {
@@ -149,5 +142,30 @@ export function createDirectory(db: Database, config?: RuntimeConfig) {
     });
   }
 
-  return { hasLiveAppAccess, getAccessContext };
+  async function getDirectoryContext(personId: string, clientId: string) {
+    const context = await getAccessContext(personId, clientId);
+    if (!context) return null;
+    const date = todayUtc();
+    const activeFamily = and(eq(familyMemberships.status, "active"), or(isNull(familyMemberships.startsOn), lte(familyMemberships.startsOn,date)), or(isNull(familyMemberships.endsOn),gte(familyMemberships.endsOn,date)));
+    const activeClass = and(eq(classMemberships.status, "active"), or(isNull(classMemberships.startsOn),lte(classMemberships.startsOn,date)), or(isNull(classMemberships.endsOn),gte(classMemberships.endsOn,date)));
+    const admin = context.roles.includes("admin");
+    const classRows = await db.select({id:classes.id,code:classes.code,displayName:classes.displayName}).from(classes).where(and(eq(classes.status,"active"),admin?undefined:inArray(classes.code,context.classScopes.effective.length?context.classScopes.effective:[""])));
+    const classIds = classRows.map(r=>r.id);
+    const memberships = classIds.length ? await db.select({classId:classMemberships.classId,personId:classMemberships.personId,relationship:classMemberships.relationship}).from(classMemberships).innerJoin(people,eq(people.id,classMemberships.personId)).where(and(inArray(classMemberships.classId,classIds),activeClass,eq(people.status,"active"))) : [];
+    const ownStudents = new Set(context.relatedStudentIds);
+    const teacherCodes = new Set(context.roles.includes("teacher") ? context.classScopes.teacher : []);
+    const teacherClasses = new Set(classRows.filter(c=>teacherCodes.has(c.code)).map(c=>c.id));
+    const visibleMemberships = memberships.filter(m=>admin || teacherClasses.has(m.classId) || m.relationship === "teacher" || ownStudents.has(m.personId));
+    const students = visibleMemberships.filter(m=>m.relationship === "student").map(m=>m.personId);
+    const ownFamilies = context.familyMemberships.map(f=>f.familyId);
+    const links = await db.select({familyId:familyMemberships.familyId,personId:familyMemberships.personId,relationship:familyMemberships.relationship}).from(familyMemberships).innerJoin(families,eq(families.id,familyMemberships.familyId)).innerJoin(people,eq(people.id,familyMemberships.personId)).where(and(activeFamily,eq(families.status,"active"),eq(people.status,"active")));
+    const allowedFamilies = new Set(admin ? links.map(l=>l.familyId) : [...ownFamilies,...links.filter(l=>l.relationship === "child" && students.includes(l.personId)).map(l=>l.familyId)]);
+    const familyLinks = links.filter(l=>allowedFamilies.has(l.familyId) && (admin || ownFamilies.includes(l.familyId) || l.relationship !== "child" || students.includes(l.personId)));
+    const personIds = [...new Set([personId,...familyLinks.map(l=>l.personId),...visibleMemberships.map(l=>l.personId)])];
+    const persons = await db.select({id:people.id,displayName:people.displayName,kind:people.kind}).from(people).where(admin?eq(people.status,"active"):inArray(people.id,personIds));
+    const familyRows = await db.select({id:families.id,code:families.code,displayName:families.displayName}).from(families).where(and(eq(families.status,"active"),admin?undefined:inArray(families.id,allowedFamilies.size?[...allowedFamilies]:["00000000-0000-0000-0000-000000000000"])));
+    return { ...context, directory: { people:persons, families:familyRows, classes:classRows, familyMemberships:familyLinks, classMemberships:visibleMemberships } };
+  }
+  return { hasLiveAppAccess, getAccessContext, getDirectoryContext };
+
 }

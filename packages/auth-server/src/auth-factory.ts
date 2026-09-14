@@ -17,8 +17,11 @@ import * as schema from "./db/schema.js";
 import { createDirectory } from "./directory/service.js";
 import { normalizeEmail } from "./seed/model.js";
 
+import { createDevelopmentLogin } from "./development/plugin.js";
+import { isDevelopmentIdentity } from "./development/policy.js";
+import { validDevelopmentIdentity } from "./development/identity.js";
 
-export function createAuth(config: RuntimeConfig, db: Database, mailer?: LoginMailer) {
+export function createAuth(config: RuntimeConfig, db: Database, localDevelopmentRequests = new WeakSet<Request>(), mailer?: LoginMailer) {
   const { directoryAudience, trustedClientIds, authOrigin } = runtimeUrls(config);
   const recordAuditEvent = createAuditRecorder(db);
   const { hasLiveAppAccess } = createDirectory(db, config);
@@ -60,7 +63,12 @@ export function createAuth(config: RuntimeConfig, db: Database, mailer?: LoginMa
     appName: "SMZ Identity",
     baseURL: config.AUTH_ISSUER,
     secret: config.BETTER_AUTH_SECRET,
-    trustedOrigins: [config.APP_A_ORIGIN, config.APP_B_ORIGIN, authOrigin, ...(config.CMS_ORIGIN ? [config.CMS_ORIGIN] : [])],
+    trustedOrigins: async () => {
+      const rows = await db.select({ origin: schema.applications.publicOrigin }).from(schema.applications)
+        .innerJoin(schema.oauthClient, eq(schema.applications.clientId, schema.oauthClient.clientId))
+        .where(and(eq(schema.applications.enabled, true), eq(schema.oauthClient.disabled, false)));
+      return [authOrigin, config.APP_A_ORIGIN, config.APP_B_ORIGIN, ...(config.CMS_ORIGIN ? [config.CMS_ORIGIN] : []), ...rows.map(r => r.origin).filter((v): v is string => Boolean(v))];
+    },
     session: { expiresIn: 30 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
     database: drizzleAdapter(db, { provider: "pg", schema, transaction: true }),
     emailAndPassword: { enabled: false, disableSignUp: true },
@@ -114,6 +122,7 @@ export function createAuth(config: RuntimeConfig, db: Database, mailer?: LoginMa
       account: {
         create: {
           before: async (newAccount) => {
+            if (isDevelopmentIdentity(newAccount.userId)) throw accessDenied("Development identities cannot link providers");
             if (newAccount.providerId !== "google") {
               await recordAuditEvent({ eventType: "identity.login.denied", actor: "better-auth", personId: newAccount.userId, detail: { reason: "provider_not_allowed" } });
               throw accessDenied("Google is the only enabled identity provider");
@@ -141,7 +150,8 @@ export function createAuth(config: RuntimeConfig, db: Database, mailer?: LoginMa
       session: {
         create: {
           before: async (newSession) => {
-            if (!(await loginAllowed(db, config, newSession.userId))) throw accessDenied("Login invitation or account access is inactive");
+            if (isDevelopmentIdentity(newSession.userId) && !(await validDevelopmentIdentity(db, config, newSession.userId))) throw accessDenied("Development identity disabled");
+            if (!isDevelopmentIdentity(newSession.userId) && !(await loginAllowed(db, config, newSession.userId))) throw accessDenied("Login invitation or account access is inactive");
             const [person] = await db
               .select({ status: people.status, kind: people.kind })
               .from(people)
@@ -165,6 +175,7 @@ export function createAuth(config: RuntimeConfig, db: Database, mailer?: LoginMa
     },
     plugins: [
       ...magicLinkPlugins(config, db, mailer),
+      createDevelopmentLogin(config, db, { hasLiveAppAccess }, localDevelopmentRequests),
       createGlobalLogout(db),
       jwt({ jwt: { issuer: config.AUTH_ISSUER } }),
       oauthProvider({
