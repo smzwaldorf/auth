@@ -61,6 +61,7 @@ export function createAuth(config: RuntimeConfig, db: Database, localDevelopment
 
   const auth = betterAuth({
     appName: "SMZ Identity",
+    onAPIError: { errorURL: `${authOrigin}/sign-in/error` },
     baseURL: config.AUTH_ISSUER,
     secret: config.BETTER_AUTH_SECRET,
     trustedOrigins: async () => {

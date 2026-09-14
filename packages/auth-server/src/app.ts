@@ -1,4 +1,5 @@
 import { adminAuthorizationUrl } from "./admin/sign-in.js";
+import { browserSignInError, signInErrorPage } from "./sign-in-error.js";
 import { adminRoutes } from "./admin/routes.js";
 import { bodyLimit } from "hono/body-limit";
 import type { LoginMailer } from "./magic-link/mail.js";
@@ -147,8 +148,10 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
     return new Response(html, { status: response.status, headers: outputHeaders });
   });
 
+  app.get("/sign-in/error", c => c.html(signInErrorPage(), 403));
   app.get("/sign-in", async (c) => {
     const query = new URL(c.req.url).searchParams;
+    if (query.has("error")) return c.html(signInErrorPage(), 403);
     if (!query.has("client_id") && query.get("admin") === "1") return c.redirect(await adminAuthorizationUrl(db, config), 303);
     if (!query.has("client_id")) return c.redirect("/");
     const oauthQuery = new URL(c.req.url).search.slice(1);
@@ -160,7 +163,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
   });
 
   app.get("/sign-in/google", async (c) => {
-    if (!googleConfigured) return c.json({ error: "google_not_configured" }, 503);
+    if (!googleConfigured) return c.html(signInErrorPage(), 503);
     const oauthQuery = c.req.query("oauth_query");
     if (!oauthQuery) return c.redirect("/");
     const headers = new Headers(c.req.raw.headers);
@@ -176,7 +179,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
         body: JSON.stringify({
           provider: "google",
           callbackURL: `${authOrigin}/`,
-          errorCallbackURL: `${authOrigin}/sign-in?error=google`,
+          errorCallbackURL: `${authOrigin}/sign-in/error`,
           oauth_query: oauthQuery,
         }),
       }),
@@ -191,7 +194,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
         return new Response(null, { status: 302, headers: responseHeaders });
       }
     }
-    return response;
+    return browserSignInError(c.req.raw, response);
   });
 
 app.get("/logout-all/:returnTo", async (c) => {
@@ -268,7 +271,7 @@ app.get("/logout-all/:returnTo", async (c) => {
   });
 
   async function handleAuthRequest(request: Request): Promise<Response> {
-    const response = await auth.handler(request);
+    const response = browserSignInError(request, await auth.handler(request));
     const origin = request.headers.get("origin");
     if (!origin) return response;
     const headers = new Headers(response.headers);
