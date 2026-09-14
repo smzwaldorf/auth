@@ -13,7 +13,7 @@ import { isDevelopmentIdentity } from "../development/policy.js";
 import { hasLiveSession } from "../global-logout.js";
 import { AdminError, userInput } from "./model.js";
 import { adminService, isAdmin } from "./service.js";
-import { layout, editView, listView, escape } from "./views.js";
+import { layout, editView, listView, escape, accountMenu } from "./views.js";
 
 export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnType<typeof createAuth>) {
   const app = new Hono<{ Variables: { actorId: string; sessionId: string } }>();
@@ -40,6 +40,17 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
     c.set("actorId", current.user.id);
     c.set("sessionId", current.session.id);
     await next();
+    if (c.res.headers.get("content-type")?.includes("text/html")) {
+      const html = await c.res.text();
+      if (html.includes("<!--signed-in-account-->")) {
+        const person = await service.detail(current.user.id);
+        const headers = new Headers(c.res.headers);
+        headers.delete("content-length");
+        c.res = new Response(html.replace("<!--signed-in-account-->", person ? accountMenu(person) : ""), { status: c.res.status, headers });
+      } else {
+        c.res = new Response(html, { status: c.res.status, headers: c.res.headers });
+      }
+    }
   });
   app.post("/sign-out", async c => {
     const response = await auth.api.signOut({ headers: c.req.raw.headers, asResponse: true });
@@ -103,7 +114,18 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
     if (!id.success) return c.notFound();
     const person = await service.detail(id.data);
     if (!person) return c.notFound();
-    return c.html(editView(person, await service.apps(), { saved: c.req.query("saved") === "1", readOnly: person.kind !== "adult" || !person.normalizedLoginEmail || isDevelopmentIdentity(person.id) }));
+    return c.html(editView(person, await service.apps(), { saved: c.req.query("saved") === "1", signedOut: c.req.query("signedOut") === "1", readOnly: person.kind !== "adult" || !person.normalizedLoginEmail || isDevelopmentIdentity(person.id) }));
+  });
+  app.post("/users/:id/sign-out", async c => {
+    const id = z.uuid().safeParse(c.req.param("id"));
+    if (!id.success) return c.notFound();
+    try {
+      await service.forceSignOut(c.get("actorId"), c.get("sessionId"), id.data);
+      return c.redirect(`/admin/users/${id.data}?signedOut=1`, 303);
+    } catch (error) {
+      if (error instanceof AdminError) return c.html(layout("Unable to sign out user", `<h1>Unable to sign out user</h1><p role="alert">${escape(error.message)}</p><a href="/admin">Return to users</a>`), error.status);
+      throw error;
+    }
   });
   app.post("/users/:id?", async c => {
     const id = c.req.param("id");

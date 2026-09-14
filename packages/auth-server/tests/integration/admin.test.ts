@@ -228,7 +228,32 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
     expect((await request("/admin/applications/access", admin.cookie, new URLSearchParams())).status).toBe(409);
     expect(await (await request(`/admin/users/${admin.id}`, admin.cookie)).text()).not.toContain('name="sites"');
   });
-  it("disapproval immediately revokes every session and client token without affecting other users", async () => {
+  it("force signs out all sessions without changing account status or approval", async () => {
+    const target = await fixture("parent"), other = await fixture("parent");
+    const second = await (await auth.$context).internalAdapter.createSession(target.id);
+    const before = await service.detail(target.id);
+    const site = await registeredSite(`https://${randomUUID()}.example`);
+    await db.insert(oauthAccessToken).values({ id: randomUUID(), token: randomUUID(), userId: target.id, sessionId: target.sessionId, clientId: site.clientIds[0]!, scopes: ["openid"] });
+    await db.insert(oauthRefreshToken).values({ id: randomUUID(), token: randomUUID(), userId: target.id, sessionId: second.id, clientId: site.clientIds[0]!, scopes: ["openid"] });
+    const path = `/admin/users/${target.id}/sign-out`;
+    expect((await request(path, admin.cookie, new URLSearchParams(), "https://foreign.example")).status).toBe(403);
+    expect((await request(path, parent.cookie, new URLSearchParams())).status).toBe(303);
+    expect(await centralSessionState(db, target.id, target.sessionId)).toBe("active");
+    const response = await request(path, admin.cookie, new URLSearchParams());
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toContain("signedOut=1");
+    expect(await service.detail(target.id)).toEqual(before);
+    expect(await db.select().from(session).where(eq(session.userId, target.id))).toHaveLength(0);
+    expect(await db.select().from(oauthAccessToken).where(eq(oauthAccessToken.userId, target.id))).toHaveLength(0);
+    expect(await db.select().from(oauthRefreshToken).where(eq(oauthRefreshToken.userId, target.id))).toHaveLength(0);
+    expect(await centralSessionState(db, other.id, other.sessionId)).toBe("active");
+    expect(await (await auth.$context).internalAdapter.createSession(target.id)).toBeTruthy();
+    const html = await (await request(`/admin/users/${target.id}`, admin.cookie)).text();
+    expect(html).toContain("Force sign out");
+    expect(html).not.toContain('name="approval"');
+    expect((await (await request("/admin/users/new", admin.cookie)).text())).not.toContain("Force sign out");
+  });
+  it("disabling immediately revokes every session and client token without affecting other users", async () => {
     const target = await fixture("parent"), other = await fixture("parent");
     const second = await (await auth.$context).internalAdapter.createSession(target.id);
     const site = await registeredSite(`https://${randomUUID()}.example`);
@@ -238,7 +263,7 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
     }
     const before = (await service.detail(target.id))!;
     const body = form(input(before.normalizedLoginEmail!), before.updatedAt.toISOString());
-    body.set("approval", "revoked");
+    body.set("status", "disabled");
     expect((await request(`/admin/users/${target.id}`, admin.cookie, body)).status).toBe(303);
     expect(await db.select().from(session).where(eq(session.userId, target.id))).toHaveLength(0);
     expect(await db.select().from(oauthAccessToken).where(eq(oauthAccessToken.userId, target.id))).toHaveLength(0);

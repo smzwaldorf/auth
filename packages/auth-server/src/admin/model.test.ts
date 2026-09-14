@@ -10,6 +10,6 @@ describe("admin input", () => {
   it("blocks every self-lockout path", () => {
     const input = userInput.parse({ ...valid, roles: ["admin"] });
     expect(() => protectSelf("a", "a", input)).not.toThrow();
-    for (const change of [{ status: "disabled" as const }, { approval: "revoked" as const }, { roles: ["parent" as const] }]) expect(() => protectSelf("a", "a", { ...input, ...change })).toThrow();
+    for (const change of [{ status: "disabled" as const }, { roles: ["parent" as const] }]) expect(() => protectSelf("a", "a", { ...input, ...change })).toThrow();
   });
 });

@@ -20,6 +20,21 @@ export async function isAdmin(db: Connection, config: RuntimeConfig, id: string)
     : loginAllowed(db as Database, config, id));
 }
 export function adminService(db: Database, config: RuntimeConfig) {
+  async function forceSignOut(actorId: string, actorSessionId: string, targetId: string) {
+    await db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(73692041)`);
+      const [live] = await tx.select().from(session).where(and(eq(session.id, actorSessionId), eq(session.userId, actorId), sql`${session.expiresAt} > now()`));
+      if (!live || !(await isAdmin(tx, config, actorId))) throw new AdminError("Administrator access is no longer active.", 403);
+      const [target] = await tx.select().from(people).where(eq(people.id, targetId)).for("update");
+      if (!target) throw new AdminError("User not found.", 404);
+      if (target.kind !== "adult" || !target.normalizedLoginEmail) throw new AdminError("Only adult login accounts have sign-in sessions.");
+      await tx.delete(oauthAccessToken).where(eq(oauthAccessToken.userId, targetId));
+      await tx.delete(oauthRefreshToken).where(eq(oauthRefreshToken.userId, targetId));
+      await tx.delete(session).where(eq(session.userId, targetId));
+      await tx.insert(auditEvents).values({ eventType: "admin.user.signed_out", actor: actorId, personId: targetId });
+    });
+  }
+
   async function list(query: string, page: number, status: string) {
     const pattern = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
     const condition = and(query ? or(ilike(people.displayName, pattern), ilike(people.normalizedLoginEmail, pattern)) : undefined,
@@ -59,13 +74,13 @@ export function adminService(db: Database, config: RuntimeConfig) {
       if (!existing) {
         await tx.insert(people).values({ id: targetId, kind: "adult", displayName: input.displayName, normalizedLoginEmail: input.email, status: input.status });
         await tx.insert(user).values({ id: targetId, name: input.displayName, email: input.email, emailVerified: false });
-        await tx.insert(loginInvitations).values({ id: crypto.randomUUID(), personId: targetId, normalizedEmail: input.email, status: input.approval === "approved" ? "pending" : "revoked" });
+        await tx.insert(loginInvitations).values({ id: crypto.randomUUID(), personId: targetId, normalizedEmail: input.email, status: "pending" });
       } else {
         await tx.update(people).set({ displayName: input.displayName, status: input.status, updatedAt: now }).where(eq(people.id, targetId));
         await tx.update(user).set({ name: input.displayName, updatedAt: now }).where(eq(user.id, targetId));
         const [invitation] = await tx.select().from(loginInvitations).where(eq(loginInvitations.personId, targetId));
         if (!invitation) throw new AdminError("This account has no login approval. Repair its directory record before editing.");
-        await tx.update(loginInvitations).set({ status: input.approval === "revoked" ? "revoked" : invitation.status === "activated" ? "activated" : "pending", expiresAt: null, updatedAt: now }).where(eq(loginInvitations.personId, targetId));
+        await tx.update(loginInvitations).set({ status: invitation.status === "activated" ? "activated" : "pending", expiresAt: null, updatedAt: now }).where(eq(loginInvitations.personId, targetId));
       }
       await tx.delete(personRoles).where(eq(personRoles.personId, targetId));
       await tx.insert(personRoles).values(input.roles.map(role => ({ personId: targetId, role })));
@@ -76,9 +91,9 @@ export function adminService(db: Database, config: RuntimeConfig) {
         await tx.delete(session).where(eq(session.userId, targetId));
       }
       await tx.insert(auditEvents).values({ eventType: existing ? "admin.user.updated" : "admin.user.created", actor: actorId, personId: targetId,
-        detail: { status: input.status, roles: input.roles, sites: input.sites, approval: input.approval } });
+        detail: { status: input.status, roles: input.roles, sites: input.sites } });
     });
     return targetId;
   }
-  return { list, detail, save, apps: async () => siteCatalog(await db.select({ clientId: applications.clientId, displayName: applications.displayName, publicOrigin: applications.publicOrigin, enabled: applications.enabled, oauthDisabled: oauthClient.disabled }).from(applications).innerJoin(oauthClient, eq(oauthClient.clientId, applications.clientId))) };
+  return { list, detail, save, forceSignOut, apps: async () => siteCatalog(await db.select({ clientId: applications.clientId, displayName: applications.displayName, publicOrigin: applications.publicOrigin, enabled: applications.enabled, oauthDisabled: oauthClient.disabled }).from(applications).innerJoin(oauthClient, eq(oauthClient.clientId, applications.clientId))) };
 }

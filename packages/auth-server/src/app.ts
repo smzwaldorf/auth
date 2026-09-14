@@ -1,3 +1,4 @@
+import { layout } from "./admin/views.js";
 import { adminAuthorizationUrl } from "./admin/sign-in.js";
 import { browserSignInError, signInErrorPage } from "./sign-in-error.js";
 import { adminRoutes } from "./admin/routes.js";
@@ -130,7 +131,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
 
   app.use("/sign-in/magic-link", bodyLimit({ maxSize: 16384 }));
   app.use("/api/auth/sign-in/magic-link", bodyLimit({ maxSize: 16384 }));
-  app.get("/magic-link/error", c => c.html('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign-in link unavailable</title><main><h1>This sign-in link is unavailable</h1><p>It may have expired, already been used, or your access may have changed.</p><a href="/">Return to your application to request another link</a></main></html>'));
+  app.get("/magic-link/error", c => c.html(layout("Sign-in link unavailable", '<section class="card"><h1>This sign-in link is unavailable</h1><p>It may have expired, already been used, or your access may have changed.</p><p>Please request a new link from your application. If you still cannot sign in, contact your school administrator for assistance.</p><a class="button" href="/">Return to school applications</a></section>', false)));
   app.post("/sign-in/magic-link", async c => {
     if (c.req.header("origin") !== authOrigin) return c.json({ error: "origin_not_allowed" }, 403);
     const body = await c.req.parseBody();
@@ -141,7 +142,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
       method: "POST", headers, body: JSON.stringify({ email: body.email, oauth_query: body.oauth_query }),
     }));
     const ok = response.ok;
-    const html = `<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${ok ? "Check your email" : "Unable to send link"}</title><main><h1>${ok ? "Check your email" : "Unable to send link"}</h1><p>${ok ? "If your email is approved, you will receive a sign-in link. It expires in five minutes and can be used once. Open it in the browser where you started signing in." : "Please wait a minute and start again from your application. If this continues, contact your administrator."}</p><a href="/">Return to applications</a></main></html>`;
+    const html = layout(ok ? "Check your email" : "Unable to send link", `<section class="card"><h1>${ok ? "Check your email" : "Unable to send link"}</h1><p>${ok ? "If your email is approved, you will receive a sign-in link. It expires in five minutes and can be used once. Open it in the browser where you started signing in." : "Please wait a minute and request a new link from your application. If you still cannot sign in, contact your school administrator for assistance."}</p><a class="button" href="/">Return to school applications</a></section>`, false);
     const outputHeaders = new Headers(response.headers);
     outputHeaders.set("content-type", "text/html; charset=utf-8");
     outputHeaders.delete("content-length");
