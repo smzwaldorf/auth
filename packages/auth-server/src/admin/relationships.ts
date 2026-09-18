@@ -120,7 +120,9 @@ export function groupContext(data: Snapshot, section: "families" | "classes", gr
   const candidates = q ? data.persons.filter(p => eligible(p) && matches(`${p.displayName} ${p.normalizedLoginEmail ?? ""}`, q)).sort(byName).slice(0, 20).map(decorate) : [];
   const unplacedStudents = !family && !q ? data.persons.filter(p => p.kind === "student" && eligible(p) && !data.classLinks.some(l => l.personId === p.id && current(l))).sort(byName).slice(0, 20).map(decorate) : [];
   const otherClasses = family ? [] : data.classes.filter(c => c.id !== groupId && c.status === "active").sort(byName);
-  return { version: data.version, section, group, adults, students, history, candidates, unplacedStudents, otherClasses };
+  // Teachers are few, so classes offer the full list of unassigned teachers without searching.
+  const availableTeachers = family ? [] : data.persons.filter(p => p.kind === "adult" && ix.hasRole(p.id, "teacher") && eligible(p)).sort(byName).map(decorate);
+  return { version: data.version, section, group, adults, students, history, candidates, unplacedStudents, otherClasses, availableTeachers };
 }
 export type GroupContext = ReturnType<typeof groupContext>;
 /** Directory-wide counts and data-hygiene items surfaced on the overview page. */

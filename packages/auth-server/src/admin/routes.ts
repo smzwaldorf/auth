@@ -198,8 +198,8 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
     return c.html(usersListView(await service.list(f.q, f.page, f.status, f.role, f.kind), f));
   });
   app.get("/users/new", async c => {
-    const returnTo = c.req.query("returnTo") || "";
-    return c.html(editView(null, { returnTo: /^\/admin(\/[A-Za-z0-9_\-/]*)?$/.test(returnTo) ? returnTo : "" }));
+    const returnTo = c.req.query("returnTo") || "", role = c.req.query("role") || "";
+    return c.html(editView(null, { returnTo: /^\/admin(\/[A-Za-z0-9_\-/]*)?$/.test(returnTo) ? returnTo : "", values: ["admin", "teacher", "parent"].includes(role) ? { roles: [role] } : undefined }));
   });
   app.get("/users/:id", async c => {
     const id = uuid(c.req.param("id"));

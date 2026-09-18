@@ -390,12 +390,20 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
     await db.insert(people).values([{ id: s1, kind: "student", displayName: "Bulk one" }, { id: s2, kind: "student", displayName: "Bulk two" }]);
     const teacher = await fixture("parent");
     await db.insert(personRoles).values({ personId: teacher.id, role: "teacher" });
+    // The class page lists unassigned teachers for direct assignment, and hides them once assigned.
+    const [teacherRow] = await db.select().from(people).where(eq(people.id, teacher.id));
+    const before = await (await request(`/admin/classes/${classA}`, admin.cookie)).text();
+    expect(before).toContain("Assign teachers (");
+    expect(before).toMatch(new RegExp(`name="personIds" value="${teacher.id}"`));
+    expect(before).toContain(teacherRow!.normalizedLoginEmail!);
+    expect(await (await request("/admin/users/new?role=teacher", admin.cookie)).text()).toContain('value="teacher" checked');
     // Bulk enroll two students and a teacher; relationships are inferred from kind/role.
     const enrolled = await post({ kind: "class-member", groupId: classA, personIds: [s1, s2, teacher.id], version: await version(), returnTo: `/admin/classes/${classA}` });
     expect(enrolled.status).toBe(303);
     expect(enrolled.headers.get("location")).toBe(`/admin/classes/${classA}?saved=1`);
     const links = await db.select().from(classMemberships).where(eq(classMemberships.classId, classA));
     expect(links.map(l => l.relationship).sort()).toEqual(["student", "student", "teacher"]);
+    expect(await (await request(`/admin/classes/${classA}`, admin.cookie)).text()).not.toMatch(new RegExp(`name="personIds" value="${teacher.id}"`));
     // A conflicting person in a batch rolls back the whole batch.
     const conflict = await post({ kind: "class-member", groupId: classA, personIds: [s1, parent.id], version: await version(), returnTo: `/admin/classes/${classA}` });
     expect(conflict.status).toBe(409);
