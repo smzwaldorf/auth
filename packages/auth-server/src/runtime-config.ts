@@ -7,6 +7,7 @@ const schema = z.object({
   RESEND_API_KEY: z.string().default(""),
   STAGING_ADMIN_EMAIL: z.string().trim().toLowerCase().default(""),
   STAGING_PARENT_EMAIL: z.string().trim().toLowerCase().default(""),
+  STAGING_PARENT_EMAILS: z.string().default("").transform(value => value.split(",").map(email => email.trim().toLowerCase()).filter(Boolean)),
   ENABLE_DEV_LOGIN: z.enum(["true", "false"]).default("false"),
   DEV_LOGIN_DATABASE_NAME: z.string().default(""),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -23,10 +24,13 @@ const schema = z.object({
 export type RuntimeConfig = z.infer<typeof schema>;
 export function parseRuntimeConfig(input: Record<string, unknown>): RuntimeConfig {
   const config = schema.parse(input);
-  if (config.STAGING_ADMIN_EMAIL || config.STAGING_PARENT_EMAIL || (config.NODE_ENV === "production" && config.MAGIC_LINK_ENABLED === "true")) {
+  if (config.STAGING_ADMIN_EMAIL || config.STAGING_PARENT_EMAIL || config.STAGING_PARENT_EMAILS.length || (config.NODE_ENV === "production" && config.MAGIC_LINK_ENABLED === "true")) {
     z.email().parse(config.STAGING_ADMIN_EMAIL);
-    z.email().parse(config.STAGING_PARENT_EMAIL);
-    if (config.STAGING_ADMIN_EMAIL === config.STAGING_PARENT_EMAIL) throw new Error("Select two distinct staging identities");
+    if (config.STAGING_PARENT_EMAIL) z.email().parse(config.STAGING_PARENT_EMAIL);
+    for (const email of config.STAGING_PARENT_EMAILS) z.email().parse(email);
+    const parentEmails = [config.STAGING_PARENT_EMAIL, ...config.STAGING_PARENT_EMAILS].filter(Boolean);
+    if (!parentEmails.length) throw new Error("Configure at least one staging parent");
+    if (new Set(parentEmails).size !== parentEmails.length || parentEmails.includes(config.STAGING_ADMIN_EMAIL)) throw new Error("Select distinct staging identities; the admin cannot be an additional parent");
   }
   if (config.NODE_ENV === "production" && config.MAGIC_LINK_ENABLED === "true" && !config.RESEND_API_KEY.startsWith("re_")) throw new Error("Configure RESEND_API_KEY before enabling magic links");
   const issuer = new URL(config.AUTH_ISSUER);

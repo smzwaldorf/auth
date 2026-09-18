@@ -74,6 +74,7 @@ async function refresh(token: { refresh_token: string; clientId: string }) {
   if (token.clientId === "express-app") body.set("client_secret", config.APP_B_CLIENT_SECRET);
   return request("/api/auth/oauth2/token", { method: "POST", body });
 }
+const linkedClientIds = ["vite-app", "express-app", ...(trustedClientIds.has("email-cms") ? ["email-cms", "email-cms-server"] : [])];
 
 describe.runIf(enabled).sequential("linked-application central logout", () => {
   beforeAll(async () => { requireTestDatabase(); nodeOrigin = new URL(config.AUTH_ISSUER).origin; await new Promise<void>(resolve => { server = serve({ fetch: app.fetch, port: Number(new URL(config.AUTH_ISSUER).port || 3000), hostname: "127.0.0.1" }, () => resolve()); }); });
@@ -108,10 +109,10 @@ describe.runIf(enabled).sequential("linked-application central logout", () => {
     const [stillExpired] = await db.select().from(session).where(eq(session.id, current.id));
     expect(stillExpired!.expiresAt.getTime()).toBeLessThan(Date.now());
   });
-  it.each(["vite-app", "express-app", ...(trustedClientIds.has("email-cms") ? ["email-cms", "email-cms-server"] : [])])("%s initiation revokes every linked grant for this sid, preserving another device", async (initiator) => {
+  it.each(linkedClientIds)("%s initiation revokes every linked grant for this sid, preserving another device", async (initiator) => {
     const current = await centralSession(), other = await centralSession();
     const tokens = [];
-    for (const clientId of trustedClientIds) tokens.push(await issue(clientId, current.cookie));
+    for (const clientId of linkedClientIds) tokens.push(await issue(clientId, current.cookie));
     const otherToken = await issue("vite-app", other.cookie);
     const response = await request(`/logout-all/${initiator}`, { headers: { cookie: current.cookie } });
     expect(response.status, await response.clone().text()).toBe(200);
@@ -119,7 +120,7 @@ describe.runIf(enabled).sequential("linked-application central logout", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
     const html = await response.text();
-    for (const clientId of trustedClientIds) expect(html).toContain(`"clientId":"${clientId}"`);
+    for (const clientId of linkedClientIds) expect(html).toContain(`"clientId":"${clientId}"`);
     for (const token of tokens) {
       expect((await access(token.access_token)).status).toBe(403);
       const userInfo = await request("/api/auth/oauth2/userinfo", { headers: { authorization: `Bearer ${token.access_token}` } });

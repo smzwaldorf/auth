@@ -21,9 +21,18 @@ it("requires two distinct confirmed staging emails and delivery credentials befo
   const enabled = { ...production, MAGIC_LINK_ENABLED: "true", STAGING_ADMIN_EMAIL: "admin@example.invalid", STAGING_PARENT_EMAIL: "parent@example.invalid", RESEND_API_KEY: "re_test" };
   expect(parseRuntimeConfig(enabled).MAGIC_LINK_FROM).toBe("Aida <info@useaida.app>");
   expect(() => parseRuntimeConfig({ ...enabled, STAGING_PARENT_EMAIL: enabled.STAGING_ADMIN_EMAIL })).toThrow();
+  expect(parseRuntimeConfig({ ...enabled, STAGING_PARENT_EMAILS: "second@example.invalid, third@example.invalid" }).STAGING_PARENT_EMAILS).toEqual(["second@example.invalid", "third@example.invalid"]);
+  expect(() => parseRuntimeConfig({ ...enabled, STAGING_PARENT_EMAILS: `${enabled.STAGING_ADMIN_EMAIL}` })).toThrow();
+  expect(() => parseRuntimeConfig({ ...enabled, STAGING_PARENT_EMAILS: `${enabled.STAGING_PARENT_EMAIL},second@example.invalid` })).toThrow();
   expect(() => parseRuntimeConfig({ ...enabled, RESEND_API_KEY: "" })).toThrow();
 });
 
 it("keeps magic links enabled when no flag is supplied", () => {
   expect(parseRuntimeConfig({}).MAGIC_LINK_ENABLED).toBe("true");
+});
+
+it("allows the plural parent setting without a legacy single parent", () => {
+ const config=parseRuntimeConfig({STAGING_ADMIN_EMAIL:"admin@school.test",STAGING_PARENT_EMAILS:"a@school.test,b@school.test"});
+ expect(config.STAGING_PARENT_EMAILS).toEqual(["a@school.test","b@school.test"]);
+ expect(()=>parseRuntimeConfig({STAGING_ADMIN_EMAIL:"admin@school.test"})).toThrow(/at least one/);
 });

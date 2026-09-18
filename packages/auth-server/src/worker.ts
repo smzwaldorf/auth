@@ -7,6 +7,7 @@ export interface Env {
   RESEND_API_KEY?: string;
   STAGING_ADMIN_EMAIL?: string;
   STAGING_PARENT_EMAIL?: string;
+  STAGING_PARENT_EMAILS?: string;
   HYPERDRIVE: { connectionString: string };
   AUTH_ISSUER: string;
   APP_A_ORIGIN: string;

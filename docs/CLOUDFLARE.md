@@ -60,6 +60,7 @@ App B keeps session data and OAuth tokens in AES-GCM encrypted Secure, HttpOnly,
 | `AUTH_ISSUER` | `https://smz-auth.<account-subdomain>.workers.dev/api/auth` (or a custom domain), no trailing slash |
 | `APP_A_ORIGIN` | App A HTTPS origin, no trailing slash |
 | `APP_B_ORIGIN` | App B HTTPS origin, no trailing slash |
+| `STAGING_PARENT_EMAILS` | Optional comma-separated additional hosted-demo parent emails; each must be distinct from the staging admin and have only the parent role |
 | `PAGES_PROJECT_NAME` | Existing Direct Upload Pages project |
 
 ### GitHub environment secrets

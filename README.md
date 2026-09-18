@@ -103,3 +103,7 @@ To connect a new website, open **Admin → Site access → Add application**. Th
 ## Application admission policy (2026-09-14)
 
 This supersedes earlier per-client and per-site grant descriptions in this document. All approved, active adult accounts automatically have access to all enabled registered applications, including new clients. Legacy app_access rows are ignored for admission. Account status, login approval, staging restrictions, and OAuth/application enabled flags remain enforced. Each consuming application owns its action permissions. Admin now lists applications and configures clients without per-user grant controls.
+
+## Repeatable newsletter demo
+
+See [the two-family demo guide](docs/DEMO-NEWSLETTER.md) for insert-only synthetic seeds and the Resend inbox test. `npm run seed:demo` prints a plan; `--check` rehearses with rollback and `--apply` writes only a new fixture.

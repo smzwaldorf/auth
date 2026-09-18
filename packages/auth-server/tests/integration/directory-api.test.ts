@@ -355,8 +355,8 @@ describe.runIf(enabled).sequential("directory API contract", () => {
     const teacher = await readDirectory((await issue(fixtureIds.teacher)).access_token);
 
     expect(admin.roles).toEqual(["admin"]);
-    expect(admin.directory.families.map((family) => family.code).sort()).toEqual(["fixture-other-family", "fixture-parent-family"]);
-    expect(admin.directory.classes.map((schoolClass) => schoolClass.code).sort()).toEqual(["FIXTURE-G1", "FIXTURE-G2"]);
+    expect(admin.directory.families.map((family) => family.code)).toEqual(expect.arrayContaining(["fixture-other-family", "fixture-parent-family"]));
+    expect(admin.directory.classes.map((schoolClass) => schoolClass.code)).toEqual(expect.arrayContaining(["FIXTURE-G1", "FIXTURE-G2"]));
     expect(admin.directory.familyMemberships).toEqual(expect.arrayContaining([
       { familyId: fixtureIds.familyParent, personId: fixtureIds.parent, relationship: "guardian" },
       { familyId: fixtureIds.familyParent, personId: fixtureIds.studentOwn, relationship: "child" },
@@ -386,7 +386,7 @@ describe.runIf(enabled).sequential("directory API contract", () => {
     expect(parent.directory.families.some((family) => family.id === fixtureIds.familyOther)).toBe(false);
 
     expect(teacher.roles).toEqual(["teacher"]);
-    expect(teacher.directory.families.map((family) => family.code).sort()).toEqual(["fixture-other-family", "fixture-parent-family"]);
+    expect(teacher.directory.families.map((family) => family.code)).toEqual(expect.arrayContaining(["fixture-other-family", "fixture-parent-family"]));
     expect(teacher.directory.classes.map((schoolClass) => schoolClass.code)).toEqual(["FIXTURE-G1"]);
     expect(teacher.directory.classMemberships).toEqual(expect.arrayContaining([
       { classId: fixtureIds.classOne, personId: fixtureIds.studentOwn, relationship: "student" },

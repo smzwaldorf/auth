@@ -27,11 +27,14 @@ describe.runIf(enabled).sequential("OAuth 2.1 and OIDC provider", () => {
 
   it("returns direct sign-in visits to the app launcher without starting an invalid OAuth flow", async () => {
     const app = createApp({ ...config, GOOGLE_CLIENT_ID: "integration-test-client", GOOGLE_CLIENT_SECRET: "integration-test-secret" }, db);
-    for (const path of ["/sign-in", "/sign-in?error=google", "/sign-in/google?oauth_query="]) {
-      const response = await app.request(path);
-      expect(response.status).toBe(302);
-      expect(response.headers.get("location")).toBe("/");
-    }
+    const launcher = await app.request("/sign-in");
+    expect(launcher.status).toBe(302);
+    expect(launcher.headers.get("location")).toBe("/");
+    const error = await app.request("/sign-in?error=google");
+    expect(error.status).toBe(403);
+    const missingOAuthQuery = await app.request("/sign-in/google?oauth_query=");
+    expect(missingOAuthQuery.status).toBe(302);
+    expect(missingOAuthQuery.headers.get("location")).toBe("/");
   });
 
   it("has the issuer-based account key required by Better Auth", async () => {

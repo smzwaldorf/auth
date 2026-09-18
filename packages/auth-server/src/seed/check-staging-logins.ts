@@ -4,10 +4,11 @@ import { db, closeDatabase } from "../db/client.js";
 import { people, user, personRoles, loginInvitations, appAccess } from "../db/schema.js";
 import { loginAllowed } from "../login-policy.js";
 
-// Read-only release gate: report only the two operator-confirmed identities.
+// Read-only release gate: report only the configured operator-confirmed identities.
 try {
   let valid = true;
-  for (const [role, email] of [["admin", config.STAGING_ADMIN_EMAIL], ["parent", config.STAGING_PARENT_EMAIL]]) {
+  const requested = [["admin", config.STAGING_ADMIN_EMAIL] as const, ...[config.STAGING_PARENT_EMAIL, ...config.STAGING_PARENT_EMAILS].filter(Boolean).map(email => ["parent", email] as const)];
+  for (const [role, email] of requested) {
     const matches = await db.select().from(people).where(eq(people.normalizedLoginEmail, email!));
     const [person] = matches;
     const [identity] = await db.select({ id: user.id, email: user.email }).from(user).where(sql`lower(${user.email}) = ${email}`);

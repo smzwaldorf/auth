@@ -5,7 +5,7 @@ import { count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { closeDatabase, db } from "../../src/db/client.js";
-import { appAccess, auditEvents, classMemberships } from "../../src/db/schema.js";
+import { appAccess, applications, auditEvents, classMemberships, oauthClient } from "../../src/db/schema.js";
 import { getAccessContext } from "../../src/directory/access-context.js";
 import { applyDirectorySeed } from "../../src/seed/apply.js";
 import { validateDirectorySeed } from "../../src/seed/model.js";
@@ -45,10 +45,19 @@ describe.runIf(enabled).sequential("live PostgreSQL directory", () => {
     await db.update(classMemberships).set({ status: "active" }).where(eq(classMemberships.id, gradeFourMembershipId));
   });
 
-  it("blocks revoked app access immediately", async () => {
-    await db.update(appAccess).set({ status: "revoked" }).where(eq(appAccess.personId, adultId));
-    expect(await getAccessContext(adultId, "vite-app")).toBeNull();
-    await applyDirectorySeed(seed);
-    expect(await getAccessContext(adultId, "vite-app")).not.toBeNull();
+  it("ignores legacy grant revocation while enforcing disabled applications", async () => {
+    const [previousGrant] = await db.select({ status: appAccess.status }).from(appAccess).where(eq(appAccess.personId, adultId));
+    const [previousApplication] = await db.select({ enabled: applications.enabled }).from(applications).where(eq(applications.clientId, "vite-app"));
+    const [previousClient] = await db.select({ disabled: oauthClient.disabled }).from(oauthClient).where(eq(oauthClient.clientId, "vite-app"));
+    try {
+      await db.update(appAccess).set({ status: "revoked" }).where(eq(appAccess.personId, adultId));
+      expect(await getAccessContext(adultId, "vite-app")).not.toBeNull();
+      await db.update(applications).set({ enabled: false }).where(eq(applications.clientId, "vite-app"));
+      expect(await getAccessContext(adultId, "vite-app")).toBeNull();
+    } finally {
+      if (previousGrant) await db.update(appAccess).set({ status: previousGrant.status }).where(eq(appAccess.personId, adultId));
+      if (previousApplication) await db.update(applications).set({ enabled: previousApplication.enabled }).where(eq(applications.clientId, "vite-app"));
+      if (previousClient) await db.update(oauthClient).set({ disabled: previousClient.disabled }).where(eq(oauthClient.clientId, "vite-app"));
+    }
   });
 });

@@ -4,6 +4,13 @@ import { loginInvitations, people, personRoles, user } from "./db/schema.js";
 import type { RuntimeConfig } from "./runtime-config.js";
 import { normalizeEmail } from "./seed/model.js";
 
+export function stagingRoleAllowed(email: string, roles: Array<{ role: string }>, config: RuntimeConfig): boolean {
+  const normalized = normalizeEmail(email);
+  if (normalized === config.STAGING_ADMIN_EMAIL) return roles.some(r => r.role === "admin");
+  if ([config.STAGING_PARENT_EMAIL, ...(config.STAGING_PARENT_EMAILS ?? [])].includes(normalized)) return roles.some(r => r.role === "parent") && !roles.some(r => r.role === "admin");
+  return false;
+}
+
 export async function loginAllowed(db: Database, config: RuntimeConfig, userId: string): Promise<boolean> {
   const [row] = await db.select({ email: user.email, personEmail: people.normalizedLoginEmail, invitationEmail: loginInvitations.normalizedEmail })
     .from(user).innerJoin(people, sql`${people.id}::text = ${user.id}`)
@@ -12,12 +19,9 @@ export async function loginAllowed(db: Database, config: RuntimeConfig, userId: 
       inArray(loginInvitations.status, ["pending", "activated"]),
       or(isNull(loginInvitations.expiresAt), gt(loginInvitations.expiresAt, new Date())))).limit(1);
   if (!row || normalizeEmail(row.email) !== row.personEmail || row.personEmail !== row.invitationEmail) return false;
-  if (config.STAGING_ADMIN_EMAIL || config.STAGING_PARENT_EMAIL) {
-    const email = normalizeEmail(row.email);
+  if (config.STAGING_ADMIN_EMAIL || config.STAGING_PARENT_EMAIL || (config.STAGING_PARENT_EMAILS ?? []).length) {
     const roles = await db.select({ role: personRoles.role }).from(personRoles).where(sql`${personRoles.personId}::text = ${userId}`);
-    if (email === config.STAGING_ADMIN_EMAIL) return roles.some(r => r.role === "admin");
-    if (email === config.STAGING_PARENT_EMAIL) return roles.some(r => r.role === "parent") && !roles.some(r => r.role === "admin");
-    return false;
+    return stagingRoleAllowed(row.email, roles, config);
   }
   return true;
 }

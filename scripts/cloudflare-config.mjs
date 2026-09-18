@@ -23,7 +23,7 @@ for (const [name, source, hostname] of [["auth", "packages/auth-server", new URL
   config.main = path.resolve(source, config.main);
   config.account_id = account;
   config.vars = { ...vars };
-  if (name === "auth") for (const key of ["MAGIC_LINK_ENABLED", "MAGIC_LINK_FROM", "STAGING_ADMIN_EMAIL", "STAGING_PARENT_EMAIL"]) {
+  if (name === "auth") for (const key of ["MAGIC_LINK_ENABLED", "MAGIC_LINK_FROM", "STAGING_ADMIN_EMAIL", "STAGING_PARENT_EMAIL", "STAGING_PARENT_EMAILS"]) {
     if (process.env[key]) config.vars[key] = process.env[key];
   }
   if (name === "auth") config.hyperdrive = [{ binding: "HYPERDRIVE", id }];
