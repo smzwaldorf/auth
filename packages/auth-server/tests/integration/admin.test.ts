@@ -345,6 +345,17 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
     const page = await request(`/admin/families/${family.id}`, admin.cookie);
     const familyHtml = await page.text();
     expect(familyHtml).toContain("Renamed student");
+    // Relationship graph: guardian above the family, child below, and the child's class on the outer tier.
+    expect(familyHtml).toContain('aria-label="Relationships of Workflow family"');
+    expect(familyHtml).toMatch(/graph-node adult[^>]*href="\/admin\/users\/[^"]+">Test parent<small>Guardian<\/small>/);
+    expect(familyHtml).toMatch(/graph-node focus">Workflow family<small>Family · F-/);
+    expect(familyHtml).toMatch(/graph-node student[^>]*href="\/admin\/students\/[^"]+">Renamed student<small>Not enrolled<\/small>/);
+    const studentHtml = await (await request(`/admin/students/${student.id}`, admin.cookie)).text();
+    expect(studentHtml).toContain('aria-label="Relationships of Renamed student"');
+    expect(studentHtml).toContain("Not enrolled in any class");
+    expect(studentHtml).toMatch(/graph-node adult[^>]*>Test parent<small>Guardian · Workflow family<\/small>/);
+    const guardianHtml = await (await request(`/admin/users/${guardian.id}`, admin.cookie)).text();
+    expect(guardianHtml).toMatch(/graph-node student[^>]*>Renamed student<small>Workflow family · not enrolled<\/small>/);
     const classHtml = await (await request(`/admin/classes/${schoolClass.id}`, admin.cookie)).text();
     expect(classHtml).toContain("Membership history");
     expect(classHtml).toContain("This class is disabled");

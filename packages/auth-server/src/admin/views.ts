@@ -44,6 +44,10 @@ ul.plain{list-style:none;padding:0;margin:0}.attention li{display:flex;justify-c
 .candidates li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line-soft);font-size:14px}.candidates li:last-child{border-bottom:0}.candidates .who{min-width:0}.candidates .who small{display:block}.candidates .chips{grid-column:1 / -1}.candidates label.check{padding:0;min-width:0}.candidates label.check>span{min-width:0}.candidates label.check small{display:block}
 .people li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:14px}.people li:last-child{border-bottom:0}.people li>span:first-child{display:flex;flex-direction:column;min-width:0}.people li small{display:block}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;font-size:14px;margin:12px 0 0}.kv dt{color:var(--muted)}.kv dd{margin:0}pre.card{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}ol.steps li{margin-bottom:8px}
+.graph{display:flex;flex-direction:column;align-items:center;padding:6px 0 2px}.graph-tier{width:100%;display:flex;flex-direction:column;align-items:center;gap:8px}.graph-tier-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}.graph-nodes{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;width:100%}
+.graph-node{display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-left-width:3px;border-radius:10px;padding:9px 14px;background:#f8faf7;text-decoration:none;color:var(--text);min-width:150px;max-width:240px;font-size:14px;font-weight:600;line-height:1.3;overflow-wrap:anywhere}.graph-node small{font-weight:400;font-size:12px}a.graph-node:hover{border-color:#a9bba8;background:#f1f5ef}
+.graph-node.adult{border-left-color:var(--info)}.graph-node.student{border-left-color:var(--ok)}.graph-node.family{border-left-color:var(--accent)}.graph-node.class{border-left-color:#7a5a9a}.graph-node.focus{background:var(--brand);border-color:var(--brand);color:white;min-width:190px;padding:12px 18px;font-size:15px}.graph-node.focus small{color:#d6e2d4}.graph-node.empty{border-style:dashed;background:transparent;color:var(--muted);font-weight:500}.graph-node.dim{opacity:.6}
+.graph-edge{display:flex;flex-direction:column;align-items:center;font-size:12px;color:var(--muted);line-height:1}.graph-edge::before,.graph-edge::after{content:"";display:block;width:2px;height:14px;background:#c8d2c7}.graph-edge span{padding:3px 8px;border:1px solid var(--line-soft);border-radius:12px;background:white}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 @media(max-width:1180px){.split.wide{grid-template-columns:1fr}}
 @media(max-width:900px){.shell{grid-template-columns:1fr}.sidebar{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;padding:14px 16px;gap:8px}.sidebar nav{flex-direction:row;flex-wrap:wrap}.sidebar .group{display:none}.sidebar-foot{margin:0 0 0 auto;flex-direction:row;align-items:center}.sidebar-foot button{width:auto}.account-details{left:auto;right:0;bottom:auto;top:calc(100% + 8px)}main{padding:24px 16px 48px}.split,.split.even{grid-template-columns:1fr}td,th{padding:10px 12px}h1{font-size:24px;overflow-wrap:anywhere}}`;
@@ -76,6 +80,24 @@ const plurals: Record<string, string> = { person: "people", family: "families", 
 export function pager(total: number, page: number, pages: number, link: (p: number) => string, noun: string) {
   return `<div class="pager"><span>${total} ${total === 1 ? noun : plurals[noun] ?? `${noun}s`} · Page ${page} of ${pages}</span><div class="actions">${page > 1 ? `<a href="${e(link(page - 1))}">← Previous</a>` : ""}${page < pages ? `<a href="${e(link(page + 1))}">Next →</a>` : ""}</div></div>`;
 }
+// ---- Relationship graph -----------------------------------------------------------
+export type GraphNode = { title: string; meta?: string; href?: string; kind: "focus" | "adult" | "student" | "family" | "class" | "empty"; dim?: boolean };
+export type GraphTier = { label?: string; edge?: string; nodes: GraphNode[] };
+const graphLimit = 24;
+/** CSS-only tiered graph: the focus entity in the middle, direct relations above/below, second-degree relations on the outer tiers. */
+export function relationshipGraph(tiers: GraphTier[], label: string) {
+  const node = (n: GraphNode) => {
+    const body = `${e(n.title)}${n.meta ? `<small>${e(n.meta)}</small>` : ""}`;
+    const cls = `graph-node ${n.kind}${n.dim ? " dim" : ""}`;
+    return n.href ? `<a class="${cls}" href="${e(n.href)}">${body}</a>` : `<div class="${cls}">${body}</div>`;
+  };
+  const tier = (t: GraphTier, i: number) => {
+    const shown = t.nodes.slice(0, graphLimit), extra = t.nodes.length - shown.length;
+    return `${i > 0 && t.edge ? `<div class="graph-edge" aria-hidden="true"><span>${e(t.edge)}</span></div>` : ""}<div class="graph-tier">${t.label ? `<div class="graph-tier-label">${e(t.label)}</div>` : ""}<div class="graph-nodes">${shown.map(node).join("")}${extra > 0 ? node({ title: `+${extra} more`, kind: "empty" }) : ""}</div></div>`;
+  };
+  return `<section class="graph" role="group" aria-label="${e(label)}">${tiers.map(tier).join("")}</section>`;
+}
+export const graphEmpty = (title: string, href?: string): GraphNode => ({ title, kind: "empty", href });
 /** Stacked list of add-candidates that stays usable in narrow columns: heading + meta, optional chips, trailing action. */
 export const candidateList = (items: { head: string; meta?: string; chips?: string; action: string }[]) =>
   `<ul class="plain candidates">${items.map(i => `<li><div class="who">${i.head}${i.meta ? `<small>${i.meta}</small>` : ""}</div><div>${i.action}</div>${i.chips ? `<div class="chips">${i.chips}</div>` : ""}</li>`).join("")}</ul>`;
@@ -121,10 +143,24 @@ export function editView(person: Person | null, options: EditOptions = {}, ctx?:
   const creating = !person;
   const formCard = `<form method="post" action="${person ? `/admin/users/${person.id}` : "/admin/users"}"><fieldset ${options.readOnly ? "disabled" : ""}>${hidden("version", person?.updatedAt.toISOString() || "")}${options.returnTo ? hidden("returnTo", options.returnTo) : ""}<section class="card"><h2>Identity</h2><p class="lede">${creating ? "Pre-approve an adult to sign in with their existing email address. No email is sent." : "Login email is fixed to preserve the linked sign-in identity."}</p><div class="field"><label for="displayName">Full name</label><input type="text" id="displayName" name="displayName" value="${value("displayName", person?.displayName)}" required maxlength="120" autocomplete="name"></div><div class="field"><label for="email">Login email</label><input type="email" id="email" name="email" value="${value("email", person?.normalizedLoginEmail)}" required maxlength="254" autocomplete="email" ${person ? "readonly" : ""}>${creating ? '<small>Use the exact email the school has approved.</small>' : ""}</div><div class="field"><label for="accountStatus">Account status</label><select id="accountStatus" name="status">${selectOptions([["active", "Active"], ["disabled", "Disabled"]], String(v.status ?? person?.status ?? "active"))}</select><small>Disabling immediately revokes all sessions and blocks sign-in and application access.</small></div><fieldset><legend>School roles</legend>${["admin", "teacher", "parent"].map(role => `<label class="check"><input type="checkbox" name="roles" value="${role}" ${roles.includes(role) ? "checked" : ""}>${relationshipLabel(role)}${role === "teacher" ? ' <small>· can be assigned to classes</small>' : role === "parent" ? ' <small>· can be added to families</small>' : ' <small>· manages this directory</small>'}</label>`).join("")}</fieldset>${!options.readOnly ? `<div class="actions"><button type="submit">${creating ? "Create account" : "Save changes"}</button><a class="btn ghost" href="${e(options.returnTo || "/admin/users")}">Cancel</a></div>${person ? '<p class="muted" style="margin-top:12px">Saving signs this user out of their current sessions. You cannot remove your own administrator access.</p>' : ""}` : ""}</section></fieldset></form>`;
   const sessions = person?.kind === "adult" && person.normalizedLoginEmail ? `<section class="card"><div class="card-head"><h2>Sessions</h2>${person.invitation ? pill(person.invitation.status === "activated" ? "Signed in before" : `Invitation ${person.invitation.status}`, person.invitation.status === "activated" ? "ok" : person.invitation.status === "pending" ? "warn" : "off") : ""}</div><p class="lede">End every current session without disabling the account. The user can sign in again.</p><form method="post" action="/admin/users/${person.id}/sign-out"><button type="submit" class="ghost">Force sign out</button></form></section>` : "";
+  const graph = person && ctx ? `<section class="card"><div class="card-head"><h2>Relationship graph</h2><span class="muted">Click a node to open it</span></div>${adultGraph(person, ctx)}</section>` : "";
   const relationships = person && ctx ? adultRelationships(person, ctx, options) : creating ? `<section class="card"><h2>Relationships</h2><p class="lede">After the account is created you can add this adult to families as a parent or guardian, or assign them to classes as a teacher.</p>${options.returnTo ? `<p class="muted">You will return to <a href="${e(options.returnTo)}">where you started</a> to finish linking.</p>` : ""}</section>` : "";
   return layout(title, `${pageHead({ crumbs: [["Users", "/admin/users"], [title]], eyebrow: creating ? "New adult account" : "Adult account", title, titleExtra: person ? statusPill(person.status) : "", lede: person ? e(person.normalizedLoginEmail || "No login email") : undefined })}
 ${options.signedOut ? notice("User signed out from all sessions. They can sign in again if their account is active.") : ""}${options.saved ? notice("User saved.") : ""}${options.error ? notice(options.error, "error") : ""}${options.readOnly ? notice("This record is read-only. Synthetic development identities are managed by the directory seeder.", "info") : ""}
-<div class="split">${formCard}<div>${relationships}${sessions}</div></div>`, true, "users");
+${graph}<div class="split">${formCard}<div>${relationships}${sessions}</div></div>`, true, "users");
+}
+function adultGraph(person: Person, ctx: PersonContext) {
+  const live = (s: string) => s === "active" || s === "scheduled";
+  const families = ctx.familyLinks.filter(l => live(l.state));
+  const classes = ctx.classLinks.filter(l => live(l.state));
+  const children = ctx.related.filter(r => r.relationship === "child");
+  const tiers: GraphTier[] = [
+    { label: "Families", nodes: families.length ? families.map(l => ({ title: l.group.displayName, meta: `${relationshipLabel(l.relationship)}${l.state === "scheduled" ? " · scheduled" : ""}`, href: `/admin/families/${l.group.id}`, kind: "family", dim: l.state !== "active" })) : [graphEmpty(ctx.roles.includes("parent") ? "Not in any family yet" : "No families")] },
+    { edge: "parent or guardian", nodes: [{ title: person.displayName, meta: ctx.roles.map(relationshipLabel).join(", ") || "No roles", kind: "focus" }] },
+  ];
+  if (ctx.isTeacher || classes.length) tiers.push({ edge: "teaches", label: "Classes", nodes: classes.length ? classes.map(l => ({ title: l.group.displayName, meta: `${l.studentCount} student${l.studentCount === 1 ? "" : "s"}`, href: `/admin/classes/${l.group.id}`, kind: "class", dim: l.state !== "active" })) : [graphEmpty("No classes assigned")] });
+  if (families.length) tiers.push({ edge: "children", label: "Children", nodes: children.length ? children.map(r => ({ title: r.person.displayName, meta: `${r.family.displayName}${r.summary.classes.length ? ` · ${r.summary.classes.map(c => c.name).join(", ")}` : " · not enrolled"}`, href: personHref(r.person), kind: "student" })) : [graphEmpty("No children in these families")] });
+  return relationshipGraph(tiers, `Relationships of ${person.displayName}`);
 }
 function adultRelationships(person: Person, ctx: PersonContext, options: EditOptions) {
   const here = `/admin/users/${person.id}`;

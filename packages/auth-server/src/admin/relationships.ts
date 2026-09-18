@@ -86,12 +86,16 @@ export function personContext(data: Snapshot, personId: string, query = "") {
   const person = ix.persons.get(personId);
   const familyLinks = data.familyLinks.filter(l => l.personId === personId).map(l => ({ ...l, group: ix.families.get(l.familyId)!, state: membershipState(l) })).filter(l => l.group)
     .sort((a, b) => stateOrder[a.state] - stateOrder[b.state] || byName(a.group, b.group));
-  const classLinks = data.classLinks.filter(l => l.personId === personId).map(l => ({ ...l, group: ix.classes.get(l.classId)!, state: membershipState(l) })).filter(l => l.group)
-    .sort((a, b) => stateOrder[a.state] - stateOrder[b.state] || byName(a.group, b.group));
+  const classLinks = data.classLinks.filter(l => l.personId === personId).map(l => {
+    const others = data.classLinks.filter(m => m.classId === l.classId && m.personId !== personId && effective(m));
+    return { ...l, group: ix.classes.get(l.classId)!, state: membershipState(l),
+      teachers: others.filter(m => m.relationship === "teacher").map(m => ix.persons.get(m.personId)?.displayName).filter((n): n is string => Boolean(n)).sort(),
+      studentCount: others.filter(m => m.relationship === "student").length };
+  }).filter(l => l.group).sort((a, b) => stateOrder[a.state] - stateOrder[b.state] || byName(a.group, b.group));
   const currentFamilyIds = new Set(familyLinks.filter(l => current(l)).map(l => l.familyId));
   const currentClassIds = new Set(classLinks.filter(l => current(l)).map(l => l.classId));
   const related = data.familyLinks.filter(l => currentFamilyIds.has(l.familyId) && l.personId !== personId && effective(l))
-    .map(l => ({ ...l, person: ix.persons.get(l.personId)!, family: ix.families.get(l.familyId)! })).filter(l => l.person && l.person.status === "active").sort((a, b) => byName(a.person, b.person));
+    .map(l => ({ ...l, person: ix.persons.get(l.personId)!, family: ix.families.get(l.familyId)!, summary: personSummary(data, ix, l.personId) })).filter(l => l.person && l.person.status === "active").sort((a, b) => byName(a.person, b.person));
   const q = query.trim();
   const familyMatches = q ? data.families.filter(f => f.status === "active" && !currentFamilyIds.has(f.id) && matches(`${f.displayName} ${f.code}`, q)).sort(byName).slice(0, 12)
     .map(f => ({ ...f, members: data.familyLinks.filter(l => l.familyId === f.id && effective(l)).map(l => ix.persons.get(l.personId)).filter((p): p is Person => Boolean(p)).map(p => p.displayName) })) : [];
