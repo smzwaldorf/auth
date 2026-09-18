@@ -29,7 +29,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
   const auth = createAuth(config, db, localDevelopmentRequests, mailer);
   const googleConfigured = Boolean(config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET);
   const recordAuditEvent = createAuditRecorder(db);
-  const { getAccessContext, getDirectoryContext } = createDirectory(db, config);
+  const { getAccessContext, getDirectoryContext, getDeliveryContacts } = createDirectory(db, config);
   const resourceClient = createAuthClient({ plugins: [oauthProviderResourceClient(auth)] });
   const app = new Hono<{ Bindings: { transport?: { remoteAddress?: string } } }>();
 
@@ -232,7 +232,7 @@ app.get("/logout-all/:returnTo", async (c) => {
     });
   });
 
-  app.on("GET", ["/api/directory/v1/me/access-context", "/api/directory/v1/me/directory"], async (c) => {
+  app.on("GET", ["/api/directory/v1/me/access-context", "/api/directory/v1/me/directory", "/api/directory/v1/me/delivery-contacts"], async (c) => {
     const authorization = c.req.header("authorization");
     const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined;
     try {
@@ -258,6 +258,17 @@ app.get("/logout-all/:returnTo", async (c) => {
       if (!context) {
         await recordAuditEvent({ eventType: "directory.access.denied", actor: "directory-api", personId, clientId });
         return c.json({ error: "access_revoked" }, 403);
+      }
+      if (c.req.path.endsWith("/delivery-contacts")) {
+        if (clientId !== "email-cms-server" || !context.roles.includes("admin")) {
+          await recordAuditEvent({ eventType: "directory.delivery.denied", actor: "directory-api", personId, clientId, detail: { reason: "server_admin_required" } });
+          return c.json({ error: "delivery_access_denied" }, 403);
+        }
+        return c.json({
+          contractVersion: 1,
+          fetchedAt: new Date().toISOString(),
+          contacts: await getDeliveryContacts(),
+        }, 200, { "Cache-Control": "private, no-store" });
       }
       return c.json(context, 200, { "Cache-Control": "private, no-store" });
     } catch (error) {

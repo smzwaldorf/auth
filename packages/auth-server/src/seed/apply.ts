@@ -4,7 +4,8 @@ import process from "node:process";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { config, directoryAudience } from "../config.js";
+import { config } from "../config.js";
+import { runtimeUrls, type RuntimeConfig } from "../runtime-config.js";
 import {
   account,
   appAccess,
@@ -37,7 +38,8 @@ function seedAuditId(seed: DirectorySeed): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
-export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
+export async function applyDirectorySeed(seed: DirectorySeed, runtimeConfig: RuntimeConfig = config): Promise<void> {
+  const { directoryAudience } = runtimeUrls(runtimeConfig);
   const now = new Date();
   const seededPersonIds = seed.people.map((person) => person.id);
 
@@ -194,7 +196,7 @@ export async function applyDirectorySeed(seed: DirectorySeed): Promise<void> {
 
     for (const application of seed.applications) {
       const rawSecret = application.clientSecretEnv
-        ? process.env[application.clientSecretEnv] ?? (application.clientSecretEnv === "APP_B_CLIENT_SECRET" ? config.APP_B_CLIENT_SECRET : undefined)
+        ? process.env[application.clientSecretEnv] ?? (application.clientSecretEnv === "APP_B_CLIENT_SECRET" ? runtimeConfig.APP_B_CLIENT_SECRET : undefined)
         : undefined;
       if (application.clientType === "confidential" && !rawSecret) {
         throw new Error(`Missing ${application.clientSecretEnv} for confidential client ${application.clientId}`);
