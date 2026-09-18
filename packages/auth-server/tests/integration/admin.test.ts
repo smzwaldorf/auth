@@ -184,8 +184,34 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
     const student = (await service.detail(studentId))!;
     await expect(service.save(admin.id, admin.sessionId, studentId, { ...input(), version: student.updatedAt.toISOString() })).rejects.toThrow("Only adult");
     const response = await request(`/admin/users/${studentId}`, admin.cookie);
-    expect(response.status).toBe(200);
-    expect(await response.text()).toContain("record is read-only");
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(`/admin/students/${studentId}`);
+    const page = await request(`/admin/students/${studentId}`, admin.cookie);
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain("Read-only student");
+    expect(html).toContain("Student record · no login account");
+    expect(html).not.toContain("Force sign out");
+  });
+  it("renders the overview, filtered lists and detail pages with relationship context", async () => {
+    const overview = await request("/admin", admin.cookie);
+    expect(overview.status).toBe(200);
+    const overviewHtml = await overview.text();
+    expect(overviewHtml).toContain("Needs attention");
+    expect(overviewHtml).toContain('aria-current="page"');
+    const users = await request("/admin/users?q=Test&role=admin&kind=adult", admin.cookie);
+    expect(users.status).toBe(200);
+    const usersHtml = await users.text();
+    expect(usersHtml).toContain("Test admin");
+    expect(usersHtml).not.toContain("Test parent");
+    expect((await request("/admin/users?q=Test+parent&role=parent", admin.cookie).then(r => r.text()))).toContain("Test parent");
+    expect((await request(`/admin/users?q=${randomUUID()}&kind=student`, admin.cookie).then(r => r.text()))).toContain("No people found");
+    expect((await request("/admin/families?id=new", admin.cookie)).headers.get("location")).toBe("/admin/families/new");
+    expect((await request("/admin/families/new", admin.cookie)).status).toBe(200);
+    expect((await request("/admin/classes/not-a-uuid", admin.cookie)).status).toBe(404);
+    expect((await request(`/admin/families/${randomUUID()}`, admin.cookie)).status).toBe(404);
+    const me = await request(`/admin/users/${admin.id}`, admin.cookie);
+    expect(await me.text()).toContain("Add to a family");
   });
   async function registeredSite(origin: string, ids = [`web-${randomUUID()}`, `server-${randomUUID()}`]) {
     for (const clientId of ids) {
@@ -315,12 +341,93 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
     await save({ kind: "classes", id: schoolClass.id, displayName: "Workflow class", code, status: "disabled" });
     expect((await directory.getAccessContext(teacher.id, site.clientIds[0]!))?.classScopes.teacher).not.toContain(code);
     expect((await request("/admin/families", guardian.cookie)).status).toBe(303);
-    const page = await request(`/admin/families?id=${family.id}`, admin.cookie);
-    expect(await page.text()).toContain("Renamed student");
+    expect((await request(`/admin/families?id=${family.id}`, admin.cookie)).headers.get("location")).toBe(`/admin/families/${family.id}`);
+    const page = await request(`/admin/families/${family.id}`, admin.cookie);
+    const familyHtml = await page.text();
+    expect(familyHtml).toContain("Renamed student");
+    const classHtml = await (await request(`/admin/classes/${schoolClass.id}`, admin.cookie)).text();
+    expect(classHtml).toContain("Membership history");
+    expect(classHtml).toContain("This class is disabled");
     const invalid = new URLSearchParams({ kind: "class-member", groupId: schoolClass.id, personId: student.id, relationship: "student", version: (await relationships.snapshot()).version, startsOn: "2026-10-01", endsOn: "2026-09-01" });
     expect((await request("/admin/directory/save", admin.cookie, invalid)).status).toBe(400);
     const form = new URLSearchParams({ kind: "students", displayName: "Form student", version: (await relationships.snapshot()).version });
-    expect((await request("/admin/directory/save", admin.cookie, form)).status).toBe(303);
+    const created = await request("/admin/directory/save", admin.cookie, form);
+    expect(created.status).toBe(303);
+    expect(created.headers.get("location")).toMatch(/^\/admin\/students\/[0-9a-f-]{36}\?saved=1$/);
+    // Search-to-add from the family page lists eligible people and excludes current members.
+    const search = await request(`/admin/families/${family.id}?add=${encodeURIComponent("Form student")}`, admin.cookie);
+    const searchHtml = await search.text();
+    expect(searchHtml).toContain("Add as child");
+    expect(searchHtml).toContain("Form student");
+    const [guardianRow] = await db.select().from(people).where(eq(people.id, guardian.id));
+    const member = await (await request(`/admin/families/${family.id}?add=${encodeURIComponent(guardianRow!.normalizedLoginEmail!)}`, admin.cookie)).text();
+    expect(member).toContain("No active person matches");
+    expect(member).not.toContain("Add as child");
+  });
+  it("adds members in bulk, ends memberships, moves students between classes and creates linked students", async () => {
+    const relationships = relationshipService(db, config), directory = createDirectory(db, config);
+    const version = async () => (await relationships.snapshot()).version;
+    const post = (data: Record<string, string | string[]>) => {
+      const body = new URLSearchParams();
+      for (const [key, value] of Object.entries(data)) for (const v of Array.isArray(value) ? value : [value]) body.append(key, v);
+      return request("/admin/directory/save", admin.cookie, body);
+    };
+    const classA = randomUUID(), classB = randomUUID(), familyId = randomUUID();
+    await db.insert(classes).values([{ id: classA, code: `A-${classA.slice(0, 8)}`, displayName: "Bulk class A" }, { id: classB, code: `B-${classB.slice(0, 8)}`, displayName: "Bulk class B" }]);
+    await db.insert(families).values({ id: familyId, code: `F-${familyId.slice(0, 8)}`, displayName: "Bulk family" });
+    const s1 = randomUUID(), s2 = randomUUID();
+    await db.insert(people).values([{ id: s1, kind: "student", displayName: "Bulk one" }, { id: s2, kind: "student", displayName: "Bulk two" }]);
+    const teacher = await fixture("parent");
+    await db.insert(personRoles).values({ personId: teacher.id, role: "teacher" });
+    // Bulk enroll two students and a teacher; relationships are inferred from kind/role.
+    const enrolled = await post({ kind: "class-member", groupId: classA, personIds: [s1, s2, teacher.id], version: await version(), returnTo: `/admin/classes/${classA}` });
+    expect(enrolled.status).toBe(303);
+    expect(enrolled.headers.get("location")).toBe(`/admin/classes/${classA}?saved=1`);
+    const links = await db.select().from(classMemberships).where(eq(classMemberships.classId, classA));
+    expect(links.map(l => l.relationship).sort()).toEqual(["student", "student", "teacher"]);
+    // A conflicting person in a batch rolls back the whole batch.
+    const conflict = await post({ kind: "class-member", groupId: classA, personIds: [s1, parent.id], version: await version(), returnTo: `/admin/classes/${classA}` });
+    expect(conflict.status).toBe(409);
+    expect(await conflict.text()).toContain("overlapping");
+    expect(await db.select().from(classMemberships).where(eq(classMemberships.classId, classA))).toHaveLength(3);
+    // Move one student to class B: the old enrollment becomes inactive and a new one starts.
+    const membership = links.find(l => l.personId === s1)!;
+    const moved = await post({ kind: "class-transfer", groupId: classB, membershipIds: membership.id, version: await version(), returnTo: `/admin/classes/${classA}` });
+    expect(moved.status).toBe(303);
+    expect((await db.select().from(classMemberships).where(eq(classMemberships.id, membership.id)))[0]!.status).toBe("inactive");
+    expect((await db.select().from(classMemberships).where(eq(classMemberships.classId, classB)))[0]).toMatchObject({ personId: s1, relationship: "student", status: "active" });
+    expect((await directory.getAccessContext(teacher.id, (await registeredSite(`https://${randomUUID()}.example`)).clientIds[0]!))?.classScopes.teacher).toContain(`A-${classA.slice(0, 8)}`);
+    // Ending memberships in bulk; already inactive ones are skipped without error.
+    const remaining = await db.select().from(classMemberships).where(eq(classMemberships.classId, classA));
+    const ended = await post({ kind: "end-memberships", membershipIds: [...remaining.map(l => l.id), membership.id], version: await version(), returnTo: `/admin/classes/${classA}` });
+    expect(ended.status).toBe(303);
+    expect((await db.select().from(classMemberships).where(eq(classMemberships.classId, classA))).every(l => l.status === "inactive")).toBe(true);
+    // Creating a student from the family page links them as a child in the same transaction.
+    const newbornName = `Bulk newborn ${randomUUID().slice(0, 8)}`;
+    const child = await post({ kind: "students", displayName: newbornName, groupId: familyId, version: await version(), returnTo: `/admin/families/${familyId}` });
+    expect(child.status).toBe(303);
+    expect(child.headers.get("location")).toBe(`/admin/families/${familyId}?saved=1`);
+    const [newborn] = await db.select().from(people).where(eq(people.displayName, newbornName));
+    expect((await db.select().from(familyMemberships).where(eq(familyMemberships.personId, newborn!.id)))[0]).toMatchObject({ familyId, relationship: "child" });
+    // Adults joining a family need an explicit relationship; the page re-renders with the error.
+    const missing = await post({ kind: "family-member", groupId: familyId, personIds: teacher.id, version: await version(), returnTo: `/admin/families/${familyId}` });
+    expect(missing.status).toBe(400);
+    const missingHtml = await missing.text();
+    expect(missingHtml).toContain("Choose father, mother or guardian");
+    expect(missingHtml).toContain(newbornName);
+    // Pre-approving a parent from a family page returns to that family with the new account pre-searched.
+    const email = `${randomUUID()}@example.test`;
+    const back = await request("/admin/users", admin.cookie, new URLSearchParams({ displayName: "Bulk parent", email, status: "active", roles: "parent", version: "", returnTo: `/admin/families/${familyId}` }));
+    expect(back.status).toBe(303);
+    expect(back.headers.get("location")).toBe(`/admin/families/${familyId}?created=1&add=${encodeURIComponent(email)}`);
+    const familyPage = await request(back.headers.get("location")!, admin.cookie);
+    const familyHtml = await familyPage.text();
+    expect(familyHtml).toContain("Adult account created");
+    expect(familyHtml).toContain("Bulk parent");
+    expect(familyHtml).toContain('name="relationship"');
+    // Invalid returnTo values are ignored rather than followed.
+    const external = await post({ kind: "students", displayName: "Bulk redirect", version: await version(), returnTo: "https://evil.example/" });
+    expect(external.headers.get("location")).toMatch(/^\/admin\/students\/[0-9a-f-]{36}\?saved=1$/);
   });
   it("creates a family atomically through all six wizard steps and ignores repeated confirmation", async () => {
     const classId = randomUUID();
@@ -352,7 +459,7 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
     const confirm = () => request("/admin/families/wizard", admin.cookie, new URLSearchParams({ draft: finalToken, action: "confirm" }));
     const created = await confirm();
     expect(created.status).toBe(303);
-    const familyId = new URL(created.headers.get("location")!, origin).searchParams.get("id")!;
+    const familyId = new URL(created.headers.get("location")!, origin).pathname.split("/").pop()!;
     const [student] = await db.select().from(people).where(eq(people.displayName, studentName));
     expect(student!.kind).toBe("student");
     expect(await db.select().from(user).where(eq(user.id, student!.id))).toHaveLength(0);

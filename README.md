@@ -50,8 +50,8 @@ not expose these services as a production deployment.
 
 Open:
 
-- Site access administration: http://localhost:3000/admin/applications
-- User administration: http://localhost:3000/admin ([access rules and operations](docs/ADMIN.md))
+- Application registrations: http://localhost:3000/admin/applications
+- Directory administration (overview, users, students, families, classes): http://localhost:3000/admin ([access rules and operations](docs/ADMIN.md))
 - Auth service: http://localhost:3000
 - OIDC discovery: http://localhost:3000/api/auth/.well-known/openid-configuration
 - App A: http://localhost:5173

@@ -1,6 +1,6 @@
 import { familyWizard } from "./family-wizard.js";
-import { relationshipInput, relationshipService } from "./relationships.js";
-import { relationshipView } from "./relationship-views.js";
+import { classesList, directoryInsights, familiesList, groupContext, personContext, relationshipInput, relationshipService, studentsList, type ListFilters, type Snapshot } from "./relationships.js";
+import { classDetailView, classesListView, familiesListView, familyDetailView, recordFormView, studentDetailView, studentsListView, type PageOptions, type Section } from "./relationship-views.js";
 import { registrationInput, registrationService, registrationView, setupView } from "./registration.js";
 import { applicationService } from "./application-service.js";
 import { applicationsView } from "./application-views.js";
@@ -14,8 +14,11 @@ import { isDevelopmentIdentity } from "../development/policy.js";
 import { hasLiveSession } from "../global-logout.js";
 import { AdminError, userInput } from "./model.js";
 import { adminService, isAdmin } from "./service.js";
-import { layout, editView, listView, escape, accountMenu } from "./views.js";
+import { layout, editView, usersListView, dashboardView, escape, accountMenu, type EditOptions } from "./views.js";
 
+const sections = ["families", "students", "classes"] as const;
+const uuid = (value: string | undefined) => z.uuid().safeParse(value).success ? value! : null;
+const clip = (value: string | undefined, max = 120) => (value || "").slice(0, max);
 export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnType<typeof createAuth>) {
   const app = new Hono<{ Variables: { actorId: string; sessionId: string } }>();
   const service = adminService(db, config);
@@ -25,13 +28,13 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "private, no-store");
     c.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-    if (c.req.method !== "GET" && c.req.header("origin") !== origin) return c.html(layout("Request denied", '<h1>Request denied</h1><p>Submit this form from the identity admin panel.</p>'), 403);
+    if (c.req.method !== "GET" && c.req.header("origin") !== origin) return c.html(layout("Request denied", '<section class="card"><h1>Request denied</h1><p>Submit this form from the identity admin panel.</p></section>', false), 403);
     if (["/admin/sign-in", "/admin/sign-out"].includes(c.req.path) && c.req.method === "POST") return next();
     const current = await auth.api.getSession({ headers: c.req.raw.headers });
     const live = current && await hasLiveSession(db, current.user.id, current.session.id);
     if (c.req.path === "/admin/sign-in" && c.req.method === "GET") {
       if (live) return c.redirect("/admin", 303);
-      return c.html(layout("Admin sign-in", '<section class="card"><h1>Administrator sign-in</h1><p>Sign in with a school-approved administrator account.</p><a class="button" href="/sign-in?admin=1">Sign in</a></section>', false), 200);
+      return c.html(layout("Admin sign-in", '<section class="card"><span class="eyebrow">SMZ Identity</span><h1>Administrator sign-in</h1><p class="lede">Sign in with a school-approved administrator account.</p><a class="btn" href="/sign-in?admin=1">Sign in</a></section>', false), 200);
     }
     if (!current || !live) return c.redirect("/admin/sign-in", 303);
     if (!(await isAdmin(db, config, current.user.id))) {
@@ -62,12 +65,13 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
     return new Response(null, { status: 303, headers });
   });
   app.post("/sign-in", c => c.redirect("/sign-in?admin=1", 303));
+  const relationships = relationshipService(db, config);
+  // ---- Overview -------------------------------------------------------------------
   app.get("/", async c => {
-    const q = (c.req.query("q") || "").slice(0, 120);
-    const page = Math.min(100000, Math.max(1, Number.parseInt(c.req.query("page") || "1", 10) || 1));
-    const status = c.req.query("status") || "";
-    return c.html(listView(await service.list(q, page, status), q, page, status));
+    const [snapshot, extra] = await Promise.all([relationships.snapshot(), service.overview()]);
+    return c.html(dashboardView(directoryInsights(snapshot), extra));
   });
+  // ---- Applications ---------------------------------------------------------------
   app.get("/applications", async c => c.html(applicationsView(await accessService.list())));
   const registrations = registrationService(db, config);
   app.get("/applications/new", c => c.html(registrationView()));
@@ -89,84 +93,159 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
   });
   app.get("/applications/site", c => c.redirect("/admin/applications", 303));
   app.get("/applications/:clientId", c => c.redirect(`/admin/applications/setup/${encodeURIComponent(c.req.param("clientId"))}`, 303));
-  app.post("/applications/access", c => c.html(layout("Automatic application access", '<h1>Application access is automatic</h1><p>Per-user grants are no longer used. Manage account status and login approval under Users.</p><a href="/admin">Manage users</a>'), 409));
-  const relationships = relationshipService(db, config);
+  app.post("/applications/access", c => c.html(layout("Automatic application access", '<section class="card"><h1>Application access is automatic</h1><p>Per-user grants are no longer used. Manage account status and login approval under Users.</p><a class="btn" href="/admin/users">Manage users</a></section>', true, "applications"), 409));
+  // ---- Family setup wizard ------------------------------------------------------------
   const wizard = familyWizard(db, config);
   app.get("/families/wizard", async c => c.html(wizard.view(wizard.start(c.get("actorId")), await relationships.snapshot())));
   app.post("/families/wizard", async c => {
     const body = await c.req.parseBody();
     let draft: ReturnType<typeof wizard.read>;
     try { draft = wizard.read(String(body.draft || ""), c.get("actorId")); }
-    catch { return c.html(layout("Setup expired", '<h1>Family setup expired</h1><p>Please start a new setup.</p><a href="/admin/families/wizard">Start family setup</a>'), 400); }
+    catch { return c.html(layout("Setup expired", '<section class="card"><h1>Family setup expired</h1><p>Please start a new setup.</p><a class="btn" href="/admin/families/wizard">Start family setup</a></section>', true, "families"), 400); }
     try {
       if (body.action === "confirm") {
         const familyId = await wizard.create(draft, c.get("sessionId"));
-        return c.redirect(`/admin/families?id=${familyId}&saved=1`, 303);
+        return c.redirect(`/admin/families/${familyId}?saved=1`, 303);
       }
       const data = await relationships.snapshot();
       return c.html(wizard.view(wizard.advance(draft, body, data), data));
     } catch (error) {
       const code = (error as { cause?: { code?: string }; code?: string }).cause?.code || (error as { code?: string }).code;
       if (error instanceof AdminError || error instanceof z.ZodError || code === "23505") {
-        const message = error instanceof z.ZodError ? error.issues.map(i=>i.message).join(" ") : error instanceof AdminError ? error.message : "A record with these details already exists. Go back and select the existing account.";
+        const message = error instanceof z.ZodError ? error.issues.map(i => i.message).join(" ") : error instanceof AdminError ? error.message : "A record with these details already exists. Go back and select the existing account.";
         return c.html(wizard.view(draft, await relationships.snapshot(), message), error instanceof AdminError ? error.status : 400);
       }
       throw error;
     }
   });
-  for (const section of ["families", "students", "classes"] as const) app.get(`/${section}`, async c => {
-    const id = c.req.query("id") || "";
-    if (id && id !== "new" && !z.uuid().safeParse(id).success) return c.notFound();
-    return c.html(relationshipView(await relationships.snapshot(), section, id, (c.req.query("q") || "").slice(0,120), c.req.query("saved") === "1"));
+  // ---- Directory pages ----------------------------------------------------------------
+  const listFilters = (c: { req: { query: (k: string) => string | undefined } }): ListFilters => ({
+    q: clip(c.req.query("q")), page: Math.max(1, Number.parseInt(c.req.query("page") || "1", 10) || 1),
+    classId: uuid(c.req.query("classId")) ?? "", familyId: uuid(c.req.query("familyId")) ?? "", needs: clip(c.req.query("needs"), 20), status: clip(c.req.query("status"), 10),
   });
+  type RenderOptions = PageOptions & { values?: Record<string, unknown>; signedOut?: boolean };
+  const pageOptions = (c: { req: { query: (k: string) => string | undefined } }): RenderOptions => ({ saved: c.req.query("saved") === "1", created: c.req.query("created") === "1", signedOut: c.req.query("signedOut") === "1", add: clip(c.req.query("add")) });
+  /** Renders a directory or user page for a path, used both for GET and for re-rendering after a failed save. */
+  async function renderPage(path: string, o: RenderOptions, snapshot?: Snapshot): Promise<{ html: string; status?: 404 } | null> {
+    const data = snapshot ?? await relationships.snapshot();
+    const [, section, id, tail] = path.match(/^\/admin\/(users|families|students|classes)(?:\/([^/]+))?(?:\/(edit))?$/) ?? [];
+    if (!section) return null;
+    if (section === "users" && id) {
+      const person = await service.detail(id);
+      if (!person) return { html: layout("Not found", "<h1>User not found</h1>", true, "users"), status: 404 };
+      const options: EditOptions = { saved: o.saved, signedOut: o.signedOut, error: o.error, addQuery: o.add, values: o.values, readOnly: !person.normalizedLoginEmail || isDevelopmentIdentity(person.id) };
+      return { html: editView(person, options, personContext(data, id, o.add)) };
+    }
+    if (section === "users") return null;
+    const sec = section as Section;
+    if (id === "new") return { html: recordFormView(sec, null, data, { error: o.error, values: o.values }) };
+    if (!id || !uuid(id)) return null;
+    const record = sec === "students" ? data.persons.find(p => p.id === id && p.kind === "student") : (sec === "families" ? data.families : data.classes).find(r => r.id === id);
+    if (!record) return { html: layout("Not found", `<h1>${sec === "students" ? "Student" : sec === "families" ? "Family" : "Class"} not found</h1>`, true, sec), status: 404 };
+    if (tail === "edit") return { html: recordFormView(sec, record, data, { error: o.error, values: o.values }) };
+    if (sec === "students") return { html: studentDetailView(personContext(data, id, o.add), o) };
+    const ctx = groupContext(data, sec, id, o.add);
+    return { html: sec === "families" ? familyDetailView(ctx, o) : classDetailView(ctx, o) };
+  }
+  for (const section of sections) {
+    app.get(`/${section}`, async c => {
+      const legacy = c.req.query("id");
+      if (legacy) return c.redirect(`/admin/${section}/${legacy === "new" ? "new" : encodeURIComponent(legacy)}`, 303);
+      const data = await relationships.snapshot(), f = listFilters(c);
+      return c.html(section === "students" ? studentsListView(studentsList(data, f), f) : section === "families" ? familiesListView(familiesList(data, f), f) : classesListView(classesList(data, f), f));
+    });
+    app.get(`/${section}/:id/edit`, async c => {
+      const page = await renderPage(`/admin/${section}/${c.req.param("id")}/edit`, pageOptions(c));
+      return page ? c.html(page.html, page.status ?? 200) : c.notFound();
+    });
+    app.get(`/${section}/:id`, async c => {
+      const id = c.req.param("id");
+      if (section === "students" && uuid(id)) {
+        const data = await relationships.snapshot();
+        const adult = data.persons.find(p => p.id === id && p.kind === "adult");
+        if (adult) return c.redirect(`/admin/users/${id}`, 303);
+        const page = await renderPage(`/admin/students/${id}`, pageOptions(c), data);
+        return page ? c.html(page.html, page.status ?? 200) : c.notFound();
+      }
+      const page = await renderPage(`/admin/${section}/${id}`, pageOptions(c));
+      return page ? c.html(page.html, page.status ?? 200) : c.notFound();
+    });
+  }
   app.post("/directory/save", async c => {
-    const body = await c.req.parseBody();
+    const body = await c.req.parseBody({ all: true });
+    const returnTo = typeof body.returnTo === "string" ? body.returnTo : "";
+    const fail = async (message: string, status: 400 | 403 | 404 | 409) => {
+      const kind = String(body.kind || "");
+      const path = returnTo || (sections.includes(kind as Section) && !body.id ? `/admin/${kind}/new` : "");
+      const page = path ? await renderPage(path, { error: message, values: body }) : null;
+      return c.html(page?.html ?? layout("Unable to save", `<section class="card"><h1>Unable to save directory</h1><div class="notice error" role="alert">${escape(message)}</div><a class="btn" href="/admin/families">Review directory</a></section>`), status);
+    };
     const parsed = relationshipInput.safeParse(body);
-    if (!parsed.success) return c.html(layout("Check directory details", `<h1>Check directory details</h1><p>${escape(parsed.error.issues.map(i => i.message).join("; "))}</p><p>Use Back to correct your entries.</p>`), 400);
+    if (!parsed.success) return fail(parsed.error.issues.map(i => i.message).join(" "), 400);
     try {
       const result = await relationships.save(c.get("actorId"), c.get("sessionId"), parsed.data);
-      const id = parsed.data.kind.endsWith("-member") ? parsed.data.groupId : result.id;
-      return c.redirect(`/admin/${result.section}?id=${id}&saved=1`, 303);
+      return c.redirect(`${result.path}?saved=1`, 303);
     } catch (error) {
-      if (error instanceof AdminError) return c.html(layout("Unable to save", `<h1>Unable to save directory</h1><p role="alert">${escape(error.message)}</p><a href="/admin/families">Review directory</a>`), error.status);
+      const code = (error as { cause?: { code?: string }; code?: string }).cause?.code || (error as { code?: string }).code;
+      if (error instanceof AdminError) return fail(error.message, error.status);
+      if (code === "23505") return fail("A record with these details already exists.", 409);
       throw error;
     }
   });
-  app.get("/users/new", async c => c.html(editView(null, await service.apps())));
+  // ---- Users ------------------------------------------------------------------------
+  app.get("/users", async c => {
+    const f = { q: clip(c.req.query("q")), page: Math.min(100000, Math.max(1, Number.parseInt(c.req.query("page") || "1", 10) || 1)), status: clip(c.req.query("status"), 10), role: clip(c.req.query("role"), 10), kind: clip(c.req.query("kind"), 10) };
+    return c.html(usersListView(await service.list(f.q, f.page, f.status, f.role, f.kind), f));
+  });
+  app.get("/users/new", async c => {
+    const returnTo = c.req.query("returnTo") || "";
+    return c.html(editView(null, { returnTo: /^\/admin(\/[A-Za-z0-9_\-/]*)?$/.test(returnTo) ? returnTo : "" }));
+  });
   app.get("/users/:id", async c => {
-    const id = z.uuid().safeParse(c.req.param("id"));
-    if (!id.success) return c.notFound();
-    const person = await service.detail(id.data);
+    const id = uuid(c.req.param("id"));
+    if (!id) return c.notFound();
+    const person = await service.detail(id);
     if (!person) return c.notFound();
-    return c.html(editView(person, await service.apps(), { saved: c.req.query("saved") === "1", signedOut: c.req.query("signedOut") === "1", readOnly: person.kind !== "adult" || !person.normalizedLoginEmail || isDevelopmentIdentity(person.id) }));
+    if (person.kind === "student") return c.redirect(`/admin/students/${id}`, 303);
+    const page = await renderPage(`/admin/users/${id}`, pageOptions(c));
+    return page ? c.html(page.html, page.status ?? 200) : c.notFound();
   });
   app.post("/users/:id/sign-out", async c => {
-    const id = z.uuid().safeParse(c.req.param("id"));
-    if (!id.success) return c.notFound();
+    const id = uuid(c.req.param("id"));
+    if (!id) return c.notFound();
     try {
-      await service.forceSignOut(c.get("actorId"), c.get("sessionId"), id.data);
-      return c.redirect(`/admin/users/${id.data}?signedOut=1`, 303);
+      await service.forceSignOut(c.get("actorId"), c.get("sessionId"), id);
+      return c.redirect(`/admin/users/${id}?signedOut=1`, 303);
     } catch (error) {
-      if (error instanceof AdminError) return c.html(layout("Unable to sign out user", `<h1>Unable to sign out user</h1><p role="alert">${escape(error.message)}</p><a href="/admin">Return to users</a>`), error.status);
+      if (error instanceof AdminError) return c.html(layout("Unable to sign out user", `<section class="card"><h1>Unable to sign out user</h1><div class="notice error" role="alert">${escape(error.message)}</div><a class="btn" href="/admin/users">Return to users</a></section>`, true, "users"), error.status);
       throw error;
     }
   });
   app.post("/users/:id?", async c => {
     const id = c.req.param("id");
-    if (id && !z.uuid().safeParse(id).success) return c.notFound();
+    if (id && !uuid(id)) return c.notFound();
     const body = await c.req.parseBody({ all: true });
     const array = (key: string) => body[key] === undefined ? [] : Array.isArray(body[key]) ? body[key] : [body[key]];
+    const returnTo = typeof body.returnTo === "string" && /^\/admin(\/[A-Za-z0-9_\-/]*)?$/.test(body.returnTo) ? body.returnTo : "";
+    const fail = async (message: string, status: 400 | 403 | 404 | 409) => {
+      const person = id ? await service.detail(id) : null;
+      if (id && !person) return c.notFound();
+      const options: EditOptions = { error: message, values: { ...body, roles: array("roles") }, returnTo };
+      return c.html(editView(person, options, person ? personContext(await relationships.snapshot(), person.id) : undefined), status);
+    };
     let sites: unknown;
     try { sites = (array("sites") as unknown[]).map(value => JSON.parse(String(value))); }
-    catch { return c.html(layout("Invalid site selection", '<h1>Invalid site selection</h1><p>Reload the user form and try again.</p>'), 400); }
+    catch { return fail("Invalid site selection. Reload the form and try again.", 400); }
     const parsed = userInput.safeParse({ ...body, roles: array("roles"), sites });
-    if (!parsed.success) return c.html(layout("Check user details", `<h1>Check user details</h1><div class="notice error" role="alert">${escape(parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; "))}</div><p>Use your browser’s Back button to correct the form without losing your entries.</p>`), 400);
+    if (!parsed.success) return fail(parsed.error.issues.map(i => `${i.path.join(".") || "form"}: ${i.message}`).join("; "), 400);
     try {
       const targetId = await service.save(c.get("actorId"), c.get("sessionId"), id, parsed.data);
+      if (!id && returnTo) return c.redirect(`${returnTo}?created=1&add=${encodeURIComponent(parsed.data.email)}`, 303);
       return c.redirect(`/admin/users/${targetId}?saved=1`, 303);
     } catch (error) {
       const code = (error as { cause?: { code?: string }; code?: string }).cause?.code || (error as { code?: string }).code;
-      if (error instanceof AdminError || code === "23505") return c.html(layout("Unable to save", `<h1>Unable to save user</h1><div class="notice error" role="alert">${escape(error instanceof AdminError ? error.message : "That email is already assigned to a user. No changes were saved.")}</div><p>Use your browser’s Back button to review your entries, or <a href="/admin">return to users</a>.</p>`), error instanceof AdminError ? error.status : 409);
+      if (error instanceof AdminError) return fail(error.message, error.status);
+      if (code === "23505") return fail("That email is already assigned to a user. No changes were saved.", 409);
       throw error;
     }
   });

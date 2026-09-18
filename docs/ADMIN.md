@@ -6,9 +6,24 @@ Signed-in users without active administrator access are redirected from admin pa
 
 Open `/admin` on the Auth service (locally, `http://localhost:3000/admin`), or follow **Manage users** from the application launcher. Use **Sign in** to choose a method on the shared login service with an existing approved administrator, or sign in through another application first and then return to `/admin`. Existing magic-link and gated local development application sign-in flows also establish the central session used by this panel. The first administrator must be provisioned through the reviewed directory seed; the panel never bootstraps administrator privileges.
 
-The panel supports searching and filtering the directory, 25 records per page, creating adult login accounts, and editing adult names, school roles, account status and application admission. New accounts are pre-approved with pending invitations but unverified email; the normal provider flow must verify email ownership. No email is sent by this panel. Account status is the only access control in the form. New users receive the internal invitation needed for verified sign-in. Saving an existing account restores its internal invitation with no expiry; Disabled still blocks all access. **Force sign out** on an existing adult account removes every central session and OAuth access/refresh token without changing the account status or invitation. Existing staging email restrictions still apply.
+## Layout
 
-Login email and person kind cannot be reassigned. Student records and reserved development identities are read-only. Family/class assignments can be managed in the Families, Students, and Classes screens. New application registration is available in Applications. Each CMS client follows the same automatic admission policy. Reapplying a seed that includes an edited person can overwrite that person's admin changes; reconcile the seed before reapplying it.
+The panel is server-rendered with no client-side scripts (the content security policy allows inline styles only). A sidebar groups the sections:
+
+- **Overview** (`/admin`): counts, quick actions, and a **Needs attention** list of relationship gaps — students without a class or family, families without an active parent or guardian or without children, classes without a teacher, and parents not linked to any family. Each item links to the matching filtered list.
+- **Users** (`/admin/users`): every person, 25 per page, searchable by name or email and filterable by kind (adult/student), role and status. Each row shows the person's effective family and class memberships as links.
+- **Students**, **Families**, **Classes** (`/admin/students`, `/admin/families`, `/admin/classes`): directory lists with search, status and gap filters (for example `?needs=class`), and dedicated detail pages at `/admin/<section>/<id>`. `?id=<uuid>` links from the previous layout redirect to the new pages.
+- **Applications** (`/admin/applications`): registered OIDC clients and their setup pages.
+
+Detail pages re-render with the submitted values and an error notice when a save is rejected, and redirect back to the page the form was submitted from (`returnTo`, restricted to `/admin` paths) on success.
+
+## Users
+
+**Users → Add adult** (`/admin/users/new`) pre-approves an adult login account. New accounts have pending invitations but unverified email; the normal provider flow must verify email ownership. No email is sent by this panel. Account status is the only access control in the form. Saving an existing account restores its internal invitation with no expiry; Disabled still blocks all access. **Force sign out** on an existing adult account removes every central session and OAuth access/refresh token without changing the account status or invitation. Existing staging email restrictions still apply.
+
+The adult page (`/admin/users/<id>`) also manages that adult's relationships from the person's side: current family memberships and class assignments with **End** and date controls, a **Children** list derived from active families, **Add to a family** (search families, then choose mother/father/guardian) and, for adults with the Teacher role, **Assign to a class**. Opening a student's id under `/admin/users` redirects to the student page.
+
+Login email and person kind cannot be reassigned. Reserved development identities are read-only. New application registration is available in Applications. Each CMS client follows the same automatic admission policy. Reapplying a seed that includes an edited person can overwrite that person's admin changes; reconcile the seed before reapplying it.
 
 Every request requires a signed Better Auth session, a live database session, current login eligibility, and the live directory `admin` role. This role explicitly authorizes administration of the central directory; application roles continue to follow each application's own policy. Form submissions require the exact Auth origin and have a 16 KB body limit. Pages are private/no-store, escaped, and protected from framing with a restrictive content security policy.
 
@@ -36,18 +51,28 @@ Enabled registrations are read dynamically for trusted browser origins and the a
 
 ## Families, students and classes
 
-1. Create a family under **Families** with a unique, stable family code.
-2. Create or locate approved adult accounts under **Users**, then open the family and add each parent as father, mother, or guardian.
-3. Create children under **Students**. Student records never create auth accounts or login invitations. Add each student to the family with relationship **child**.
-4. Create a class under **Classes**, using the same class code as CMS. Open the class and add student enrollments. Adults with the teacher role can be assigned as teachers.
-5. Use membership start/end dates for scheduled changes. Dates are inclusive; blank dates are unbounded. Set membership status to Inactive for immediate removal from the next live access-context check. Disable families, students or classes to exclude them without deleting history.
+Relationships can be managed from either side: open a family or class to manage its members, or open a person to manage their memberships. Every membership row shows its state — **Active**, **Scheduled** (starts in the future), **Ended** (end date passed) or **Inactive** — with **End** and **Dates** controls. Ended and inactive memberships stay visible under **Membership history** on the group page, where inactive rows can be **Restored**.
 
-Group codes cannot be changed through this UI because applications use them for mapping. Family/class memberships reject overlapping active periods for the same person and group. Membership person/group/relationship is fixed: end a membership and add a new one to change those relationships. All writes recheck live admin authorization, use a directory snapshot version to reject stale forms, and record before/after audit details. Directory changes do not create application grants or change user approval.
+**Family page** (`/admin/families/<id>`): parents and guardians, children, and an **Add members** panel. Search by name or email; matching adults get a mother/father/guardian choice, matching students an **Add as child** button, and people already in the family are excluded. **Create a new child in this family** creates the student record and the child membership in one transaction. **Add adult account** opens the user form and, after the account is created, returns to the family with the new adult pre-searched so they can be added immediately.
+
+**Class page** (`/admin/classes/<id>`): teachers and students. Search results are a checklist so several students (and teachers with the Teacher role) can be added together; relationships are inferred from the person's kind. Without a search term the panel lists students not yet in any class. Selected enrolled students can be **ended** or **moved** to another class in one step: moving ends the enrollment here and starts a new one in the destination, preserving history. **Create a new student in this class** creates and enrolls in one transaction.
+
+**Student page** (`/admin/students/<id>`): name and status, families (add via family search), class enrollments (add via class select) and the derived **Parents & guardians** and **Siblings** lists.
+
+Recommended order when not using the wizard:
+
+1. Create a family under **Families → Add family** with a unique, stable family code.
+2. Create or locate approved adult accounts under **Users**, then add each parent to the family as father, mother, or guardian.
+3. Create children from the family page (**Create a new child**), from **Students → Add student** (optionally linking to a family or class on creation), or from the class page. Student records never create auth accounts or login invitations.
+4. Create a class under **Classes → Add class**, using the same class code as CMS. Enroll students from the class page and assign a teacher.
+5. Use membership start/end dates for scheduled changes. Dates are inclusive; blank dates are unbounded. **End** a membership for immediate removal from the next live access-context check. Disable families, students or classes to exclude them without deleting history.
+
+Group codes cannot be changed through this UI because applications use them for mapping. Family/class memberships reject overlapping active periods for the same person and group; a bulk add that includes one conflicting person rolls back the whole batch. Membership person/group/relationship is fixed: end a membership and add a new one (or use **Move** for classes) to change those relationships. All writes recheck live admin authorization, use a directory snapshot version to reject stale forms, and record before/after audit details. Directory changes do not create application grants or change user approval.
 
 The directory access context derives parent class scopes from active family memberships, active children and active student class memberships. CMS maps class codes to its local class IDs. Existing seed imports can overwrite managed records; reconcile them before reapplying seeds.
 
 ## Quick family setup
 
-Open **Families → New family setup** (`/admin/families/wizard`). Add a student, choose an active class, then choose an existing family or create one with a name suggested from the student. Existing families skip the adult step and reuse their current members. For a new family, add existing adults or enter names and emails for new parents and guardians. Review the family graph and confirm creation. Existing family members remain connected.
+Open **Families → New family setup** (`/admin/families/wizard`). Add a student, choose an active class, then choose an existing family or create one with a name suggested from the student. Existing families skip the adult step and reuse their current members. For a new family, add existing adults or enter names and emails for new parents and guardians. Review the family graph and confirm creation. Existing family members remain connected. Confirmation lands on the new family's page.
 
 Nothing is saved before confirmation. Confirmation atomically creates the student, enrollment, family (when new), adult accounts and relationships. New adults receive the Parent role and an unverified email account; no email is sent. Existing adults retain their other roles. Signed drafts expire after one hour and are bound to the administrator; final submission rechecks live access and selected records. Repeated confirmation does not create duplicates.

@@ -2,7 +2,7 @@ import { siteCatalog } from "./sites.js";
 import { and, eq, ilike, or, sql, inArray } from "drizzle-orm";
 import type { Database } from "../db/database.js";
 import type { RuntimeConfig } from "../runtime-config.js";
-import { people, personRoles, oauthClient, user, loginInvitations, applications, appAccess, auditEvents, session, oauthAccessToken, oauthRefreshToken } from "../db/schema.js";
+import { people, personRoles, oauthClient, user, loginInvitations, applications, appAccess, auditEvents, session, oauthAccessToken, oauthRefreshToken, familyMemberships, classMemberships, families, classes } from "../db/schema.js";
 import { loginAllowed } from "../login-policy.js";
 import { isDevelopmentIdentity } from "../development/policy.js";
 import { validDevelopmentIdentity } from "../development/identity.js";
@@ -35,16 +35,44 @@ export function adminService(db: Database, config: RuntimeConfig) {
     });
   }
 
-  async function list(query: string, page: number, status: string) {
+  async function list(query: string, page: number, status: string, role = "", kind = "") {
     const pattern = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
     const condition = and(query ? or(ilike(people.displayName, pattern), ilike(people.normalizedLoginEmail, pattern)) : undefined,
-      status === "active" || status === "disabled" ? eq(people.status, status) : undefined);
+      status === "active" || status === "disabled" ? eq(people.status, status) : undefined,
+      kind === "adult" || kind === "student" ? eq(people.kind, kind) : undefined,
+      ["admin", "teacher", "parent", "student"].includes(role) ? sql`exists (select 1 from ${personRoles} where ${personRoles.personId} = ${people.id} and ${personRoles.role} = ${role})` : undefined);
     const [rows, [total]] = await Promise.all([
       db.select().from(people).where(condition).orderBy(people.displayName, people.id).limit(25).offset((page - 1) * 25),
       db.select({ count: sql<number>`count(*)::int` }).from(people).where(condition),
     ]);
-    const roles = rows.length ? await db.select().from(personRoles).where(inArray(personRoles.personId, rows.map(r => r.id))) : [];
-    return { rows: rows.map(r => ({ ...r, roles: roles.filter(role => role.personId === r.id).map(role => role.role) })), total: total?.count ?? 0 };
+    const ids = rows.map(r => r.id);
+    const [roles, familyRows, classRows, invitations] = ids.length ? await Promise.all([
+      db.select().from(personRoles).where(inArray(personRoles.personId, ids)),
+      db.select({ personId: familyMemberships.personId, groupId: families.id, name: families.displayName, relationship: familyMemberships.relationship, status: familyMemberships.status, startsOn: familyMemberships.startsOn, endsOn: familyMemberships.endsOn })
+        .from(familyMemberships).innerJoin(families, eq(families.id, familyMemberships.familyId)).where(inArray(familyMemberships.personId, ids)),
+      db.select({ personId: classMemberships.personId, groupId: classes.id, name: classes.displayName, relationship: classMemberships.relationship, status: classMemberships.status, startsOn: classMemberships.startsOn, endsOn: classMemberships.endsOn })
+        .from(classMemberships).innerJoin(classes, eq(classes.id, classMemberships.classId)).where(inArray(classMemberships.personId, ids)),
+      db.select({ personId: loginInvitations.personId, status: loginInvitations.status }).from(loginInvitations).where(inArray(loginInvitations.personId, ids)),
+    ]) : [[], [], [], []];
+    const day = new Date().toISOString().slice(0, 10);
+    const live = (m: { status: string; startsOn: string | null; endsOn: string | null }) => m.status === "active" && (!m.startsOn || m.startsOn <= day) && (!m.endsOn || m.endsOn >= day);
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        roles: roles.filter(role => role.personId === r.id).map(role => role.role),
+        families: familyRows.filter(m => m.personId === r.id && live(m)).map(m => ({ id: m.groupId, name: m.name, relationship: m.relationship })).sort((a, b) => a.name.localeCompare(b.name)),
+        classes: classRows.filter(m => m.personId === r.id && live(m)).map(m => ({ id: m.groupId, name: m.name, relationship: m.relationship })).sort((a, b) => a.name.localeCompare(b.name)),
+        invitation: invitations.find(i => i.personId === r.id)?.status ?? null,
+      })),
+      total: total?.count ?? 0,
+    };
+  }
+  async function overview() {
+    const [[pending], [apps]] = await Promise.all([
+      db.select({ count: sql<number>`count(*)::int` }).from(loginInvitations).innerJoin(people, eq(people.id, loginInvitations.personId)).where(and(eq(loginInvitations.status, "pending"), eq(people.status, "active"))),
+      db.select({ count: sql<number>`count(*)::int` }).from(applications).innerJoin(oauthClient, eq(oauthClient.clientId, applications.clientId)).where(and(eq(applications.enabled, true), eq(oauthClient.disabled, false))),
+    ]);
+    return { pendingInvitations: pending?.count ?? 0, applications: apps?.count ?? 0 };
   }
   async function detail(id: string) {
     const [[person], roles, grants, [invitation]] = await Promise.all([
@@ -95,5 +123,5 @@ export function adminService(db: Database, config: RuntimeConfig) {
     });
     return targetId;
   }
-  return { list, detail, save, forceSignOut, apps: async () => siteCatalog(await db.select({ clientId: applications.clientId, displayName: applications.displayName, publicOrigin: applications.publicOrigin, enabled: applications.enabled, oauthDisabled: oauthClient.disabled }).from(applications).innerJoin(oauthClient, eq(oauthClient.clientId, applications.clientId))) };
+  return { list, detail, save, forceSignOut, overview, apps: async () => siteCatalog(await db.select({ clientId: applications.clientId, displayName: applications.displayName, publicOrigin: applications.publicOrigin, enabled: applications.enabled, oauthDisabled: oauthClient.disabled }).from(applications).innerJoin(oauthClient, eq(oauthClient.clientId, applications.clientId))) };
 }
