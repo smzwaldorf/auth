@@ -255,6 +255,7 @@ export function relationshipService(db: Database, config: RuntimeConfig) {
         for (const membershipId of input.membershipIds) {
           const familyLink = data.familyLinks.find(l => l.id === membershipId), classLink = data.classLinks.find(l => l.id === membershipId);
           if (!familyLink && !classLink) throw new AdminError("Membership not found.", 404);
+          if (isDevelopmentIdentity((familyLink ?? classLink)!.personId)) throw new AdminError("Development identities are managed by their seeder.", 403);
           if ((familyLink ?? classLink)!.status !== "active") continue;
           if (familyLink) await tx.update(familyMemberships).set({ status: "inactive", updatedAt: now }).where(eq(familyMemberships.id, membershipId));
           else await tx.update(classMemberships).set({ status: "inactive", updatedAt: now }).where(eq(classMemberships.id, membershipId));

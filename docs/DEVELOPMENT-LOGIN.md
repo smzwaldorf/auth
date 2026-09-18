@@ -33,7 +33,7 @@ The local endpoint accepts only the fixed identity choice and signed, expiring O
 
 The development seed also provisions `admin@smzwaldorf.com` (admin) and `teacher@smzwaldorf.com` (teacher), with reserved IDs and no provider links. The local chooser displays both addresses. Existing synthetic Admin/Parent accounts remain available. These accounts are development-only impersonations; no email is sent or mailbox ownership assumed. Existing conflicting identities cause the whole seed transaction to abort.
 
-Run `npm run development:seed -w @smz/auth-server` with `NODE_ENV=development`, `ENABLE_DEV_LOGIN=true`, and `DEV_LOGIN_DATABASE_NAME` matching the explicitly selected local `_dev` or `_test` database. Register the local CMS client first. The server must use the same settings. The regular `smz_identity` database intentionally does not enable this bypass. Automatic application admission requires no app_access seed rows.
+Run `npm run development:seed -w @smz/auth-server` with `NODE_ENV=development`, `ENABLE_DEV_LOGIN=true`, and `DEV_LOGIN_DATABASE_NAME` matching the explicitly selected local `_dev` or `_test` database. Register the local CMS client first. The server must use the same settings. The regular `smz_identity` database intentionally does not enable this bypass. Automatic application admission requires no app_access seed rows. When the local newsletter demo fixture is present, the seeder also assigns `teacher@smzwaldorf.com` as teacher of **Demo Grade 1A** (`DEMO-1A`) so teacher flows have data; this is insert-only and is not recreated if an administrator has ended it. Development identities' memberships show as **Seeded** in the admin panel and cannot be changed there.
 
 ## Development school environment
 

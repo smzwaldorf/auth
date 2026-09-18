@@ -2,7 +2,10 @@ import { and, eq, or } from "drizzle-orm";
 import type { RuntimeConfig as AuthConfig } from "../runtime-config.js";
 type AuthSettings = { trustedClientIds: Set<string> };
 import type { Database } from "../db/database.js";
-import { account, applications, loginInvitations, oauthClient, people, personRoles, user } from "../db/schema.js";
+import { account, applications, classMemberships, classes, loginInvitations, oauthClient, people, personRoles, user } from "../db/schema.js";
+/** First class of the local newsletter demo fixture (scripts/seed-demo.mjs); the development teacher teaches it when present. */
+const demoClassId = "de900000-0000-4000-8000-000000000201";
+const demoTeacherMembershipId = "d4100000-0000-4000-8000-000000000011";
 import { developmentIdentities, developmentLoginEnabled } from "./policy.js";
 
 /** Insert fixed synthetic identities only. Never update existing identities or restore revoked access. */
@@ -37,6 +40,11 @@ return async function seedDevelopmentIdentities() {
       await tx.insert(personRoles).values({ personId: identity.id, role: identity.role });
       await tx.insert(loginInvitations).values({ id: identity.invitationId, personId: identity.id, normalizedEmail: identity.email, status: "activated", activatedAt: new Date() });
     }
+    // Give the development teacher one class when the demo fixture exists so teacher flows have data. Insert-only: never
+    // recreated if an administrator has ended it, and skipped if an equivalent active assignment already exists.
+    const [demoClass] = await tx.select({ id: classes.id }).from(classes).where(and(eq(classes.id, demoClassId), eq(classes.status, "active")));
+    const teacherLinks = demoClass ? await tx.select({ id: classMemberships.id }).from(classMemberships).where(and(eq(classMemberships.classId, demoClassId), eq(classMemberships.personId, developmentIdentities.schoolTeacher.id))) : [];
+    if (demoClass && !teacherLinks.length) await tx.insert(classMemberships).values({ id: demoTeacherMembershipId, classId: demoClassId, personId: developmentIdentities.schoolTeacher.id, relationship: "teacher" });
   });
 }
 }
