@@ -1,3 +1,4 @@
+import { familyWizard } from "./family-wizard.js";
 import { relationshipInput, relationshipService } from "./relationships.js";
 import { relationshipView } from "./relationship-views.js";
 import { registrationInput, registrationService, registrationView, setupView } from "./registration.js";
@@ -90,6 +91,29 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
   app.get("/applications/:clientId", c => c.redirect(`/admin/applications/setup/${encodeURIComponent(c.req.param("clientId"))}`, 303));
   app.post("/applications/access", c => c.html(layout("Automatic application access", '<h1>Application access is automatic</h1><p>Per-user grants are no longer used. Manage account status and login approval under Users.</p><a href="/admin">Manage users</a>'), 409));
   const relationships = relationshipService(db, config);
+  const wizard = familyWizard(db, config);
+  app.get("/families/wizard", async c => c.html(wizard.view(wizard.start(c.get("actorId")), await relationships.snapshot())));
+  app.post("/families/wizard", async c => {
+    const body = await c.req.parseBody();
+    let draft: ReturnType<typeof wizard.read>;
+    try { draft = wizard.read(String(body.draft || ""), c.get("actorId")); }
+    catch { return c.html(layout("Setup expired", '<h1>Family setup expired</h1><p>Please start a new setup.</p><a href="/admin/families/wizard">Start family setup</a>'), 400); }
+    try {
+      if (body.action === "confirm") {
+        const familyId = await wizard.create(draft, c.get("sessionId"));
+        return c.redirect(`/admin/families?id=${familyId}&saved=1`, 303);
+      }
+      const data = await relationships.snapshot();
+      return c.html(wizard.view(wizard.advance(draft, body, data), data));
+    } catch (error) {
+      const code = (error as { cause?: { code?: string }; code?: string }).cause?.code || (error as { code?: string }).code;
+      if (error instanceof AdminError || error instanceof z.ZodError || code === "23505") {
+        const message = error instanceof z.ZodError ? error.issues.map(i=>i.message).join(" ") : error instanceof AdminError ? error.message : "A record with these details already exists. Go back and select the existing account.";
+        return c.html(wizard.view(draft, await relationships.snapshot(), message), error instanceof AdminError ? error.status : 400);
+      }
+      throw error;
+    }
+  });
   for (const section of ["families", "students", "classes"] as const) app.get(`/${section}`, async c => {
     const id = c.req.query("id") || "";
     if (id && id !== "new" && !z.uuid().safeParse(id).success) return c.notFound();

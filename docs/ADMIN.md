@@ -45,3 +45,9 @@ Enabled registrations are read dynamically for trusted browser origins and the a
 Group codes cannot be changed through this UI because applications use them for mapping. Family/class memberships reject overlapping active periods for the same person and group. Membership person/group/relationship is fixed: end a membership and add a new one to change those relationships. All writes recheck live admin authorization, use a directory snapshot version to reject stale forms, and record before/after audit details. Directory changes do not create application grants or change user approval.
 
 The directory access context derives parent class scopes from active family memberships, active children and active student class memberships. CMS maps class codes to its local class IDs. Existing seed imports can overwrite managed records; reconcile them before reapplying seeds.
+
+## Quick family setup
+
+Open **Families → New family setup** (`/admin/families/wizard`). Add a student, choose an active class, then choose an existing family or create one with a name suggested from the student. Existing families skip the adult step and reuse their current members. For a new family, add existing adults or enter names and emails for new parents and guardians. Review the family graph and confirm creation. Existing family members remain connected.
+
+Nothing is saved before confirmation. Confirmation atomically creates the student, enrollment, family (when new), adult accounts and relationships. New adults receive the Parent role and an unverified email account; no email is sent. Existing adults retain their other roles. Signed drafts expire after one hour and are bound to the administrator; final submission rechecks live access and selected records. Repeated confirmation does not create duplicates.
