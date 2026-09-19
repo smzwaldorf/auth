@@ -6,6 +6,10 @@ Signed-in users without active administrator access are redirected from admin pa
 
 Open `/admin` on the Auth service (locally, `http://localhost:3000/admin`), or follow **Manage users** from the application launcher. Use **Sign in** to choose a method on the shared login service with an existing approved administrator, or sign in through another application first and then return to `/admin`. Existing magic-link and gated local development application sign-in flows also establish the central session used by this panel. The first administrator must be provisioned through the reviewed directory seed; the panel never bootstraps administrator privileges.
 
+## Language
+
+The panel renders in **Traditional Chinese (zh-Hant) by default** and can be switched to **English** with the 繁體中文 / English toggle in the sidebar (also shown on the sign-in and access-denied pages). The choice is stored per browser in the `smz_admin_lang` cookie (`Path=/admin`, HttpOnly, one year) via `POST /admin/lang`, which only accepts `zh-Hant` or `en` and `/admin` return paths. Every string is localized — pages, form labels, relationship graphs, and the server-side validation and save errors — through `src/admin/i18n.ts`, keyed by the English source text with translations in `src/admin/i18n.zh-hant.ts`. A missing translation falls back to English rather than rendering blank, and a unit test fails the build when a `t("…")` key has no Traditional Chinese entry. Person, family and class names are shown as stored and are never translated.
+
 ## Layout
 
 The panel is server-rendered with no client-side scripts (the content security policy allows inline styles only). A sidebar groups the sections:

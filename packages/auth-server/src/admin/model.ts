@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { t } from "./i18n.js";
 
 export const userInput = z.object({
   displayName: z.string().trim().min(1).max(120),
@@ -15,6 +16,6 @@ export class AdminError extends Error {
 }
 export function protectSelf(actorId: string, targetId: string, input: UserInput) {
   if (actorId === targetId && (input.status !== "active" || !input.roles.includes("admin"))) {
-    throw new AdminError("You cannot disable your own account or remove your admin role.", 403);
+    throw new AdminError(t("You cannot disable your own account or remove your admin role."), 403);
   }
 }

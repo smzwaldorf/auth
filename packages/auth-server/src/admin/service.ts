@@ -7,6 +7,7 @@ import { loginAllowed } from "../login-policy.js";
 import { isDevelopmentIdentity } from "../development/policy.js";
 import { validDevelopmentIdentity } from "../development/identity.js";
 import { AdminError, protectSelf, type UserInput } from "./model.js";
+import { t } from "./i18n.js";
 
 type Connection = Pick<Database, "select">;
 export async function isAdmin(db: Connection, config: RuntimeConfig, id: string) {
@@ -24,10 +25,10 @@ export function adminService(db: Database, config: RuntimeConfig) {
     await db.transaction(async tx => {
       await tx.execute(sql`select pg_advisory_xact_lock(73692041)`);
       const [live] = await tx.select().from(session).where(and(eq(session.id, actorSessionId), eq(session.userId, actorId), sql`${session.expiresAt} > now()`));
-      if (!live || !(await isAdmin(tx, config, actorId))) throw new AdminError("Administrator access is no longer active.", 403);
+      if (!live || !(await isAdmin(tx, config, actorId))) throw new AdminError(t("Administrator access is no longer active."), 403);
       const [target] = await tx.select().from(people).where(eq(people.id, targetId)).for("update");
-      if (!target) throw new AdminError("User not found.", 404);
-      if (target.kind !== "adult" || !target.normalizedLoginEmail) throw new AdminError("Only adult login accounts have sign-in sessions.");
+      if (!target) throw new AdminError(t("User not found."), 404);
+      if (target.kind !== "adult" || !target.normalizedLoginEmail) throw new AdminError(t("Only adult login accounts have sign-in sessions."));
       await tx.delete(oauthAccessToken).where(eq(oauthAccessToken.userId, targetId));
       await tx.delete(oauthRefreshToken).where(eq(oauthRefreshToken.userId, targetId));
       await tx.delete(session).where(eq(session.userId, targetId));
@@ -86,18 +87,18 @@ export function adminService(db: Database, config: RuntimeConfig) {
   async function save(actorId: string, actorSessionId: string, id: string | undefined, input: UserInput) {
     const targetId = id ?? crypto.randomUUID();
     protectSelf(actorId, targetId, input);
-    if (isDevelopmentIdentity(targetId)) throw new AdminError("Synthetic development accounts are managed by the development seeder.", 403);
+    if (isDevelopmentIdentity(targetId)) throw new AdminError(t("Synthetic development accounts are managed by the development seeder."), 403);
     await db.transaction(async tx => {
       // Serialize admin writes so concurrent demotions cannot remove both acting admins.
       await tx.execute(sql`select pg_advisory_xact_lock(73692041)`);
       const [liveSession] = await tx.select({ id: session.id }).from(session).where(and(eq(session.id, actorSessionId), eq(session.userId, actorId), sql`${session.expiresAt} > now()`));
-      if (!liveSession || !(await isAdmin(tx, config, actorId))) throw new AdminError("Administrator access is no longer active.", 403);
+      if (!liveSession || !(await isAdmin(tx, config, actorId))) throw new AdminError(t("Administrator access is no longer active."), 403);
       const [existing] = await tx.select().from(people).where(eq(people.id, targetId)).for("update");
-      if (id && !existing) throw new AdminError("User not found.", 404);
-      if (existing && (existing.kind !== "adult" || !existing.normalizedLoginEmail)) throw new AdminError("Only adult login accounts can be edited here.");
-      if (existing && existing.updatedAt.toISOString() !== input.version) throw new AdminError("This user changed since you opened the form. Reload and review the latest details.", 409);
-      if (existing && input.email !== existing.normalizedLoginEmail) throw new AdminError("Login emails cannot be reassigned through this panel.");
-      if (input.sites.length) throw new AdminError("Application access is automatic. Reload this user form before saving.", 409);
+      if (id && !existing) throw new AdminError(t("User not found."), 404);
+      if (existing && (existing.kind !== "adult" || !existing.normalizedLoginEmail)) throw new AdminError(t("Only adult login accounts can be edited here."));
+      if (existing && existing.updatedAt.toISOString() !== input.version) throw new AdminError(t("This user changed since you opened the form. Reload and review the latest details."), 409);
+      if (existing && input.email !== existing.normalizedLoginEmail) throw new AdminError(t("Login emails cannot be reassigned through this panel."));
+      if (input.sites.length) throw new AdminError(t("Application access is automatic. Reload this user form before saving."), 409);
       const now = new Date();
       if (!existing) {
         await tx.insert(people).values({ id: targetId, kind: "adult", displayName: input.displayName, normalizedLoginEmail: input.email, status: input.status });
@@ -107,7 +108,7 @@ export function adminService(db: Database, config: RuntimeConfig) {
         await tx.update(people).set({ displayName: input.displayName, status: input.status, updatedAt: now }).where(eq(people.id, targetId));
         await tx.update(user).set({ name: input.displayName, updatedAt: now }).where(eq(user.id, targetId));
         const [invitation] = await tx.select().from(loginInvitations).where(eq(loginInvitations.personId, targetId));
-        if (!invitation) throw new AdminError("This account has no login approval. Repair its directory record before editing.");
+        if (!invitation) throw new AdminError(t("This account has no login approval. Repair its directory record before editing."));
         await tx.update(loginInvitations).set({ status: invitation.status === "activated" ? "activated" : "pending", expiresAt: null, updatedAt: now }).where(eq(loginInvitations.personId, targetId));
       }
       await tx.delete(personRoles).where(eq(personRoles.personId, targetId));

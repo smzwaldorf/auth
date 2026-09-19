@@ -25,8 +25,10 @@ async function fixture(role: "admin" | "parent") {
   const signature = createHmac("sha256", config.BETTER_AUTH_SECRET).update(current.token).digest("base64");
   return { id, cookie: `better-auth.session_token=${encodeURIComponent(`${current.token}.${signature}`)}`, sessionId: current.id };
 }
-function request(path: string, cookie?: string, body?: URLSearchParams, requestOrigin = origin) {
-  return app.request(`${origin}${path}`, { method: body ? "POST" : "GET", headers: { ...(cookie ? { cookie } : {}), ...(body ? { origin: requestOrigin, "content-type": "application/x-www-form-urlencoded" } : {}) }, body });
+/** Requests default to English so assertions stay readable; pass `lang: null` to exercise the Traditional Chinese default. */
+function request(path: string, cookie?: string, body?: URLSearchParams, requestOrigin = origin, lang: string | null = "en") {
+  const cookies = [cookie, lang ? `smz_admin_lang=${lang}` : ""].filter(Boolean).join("; ");
+  return app.request(`${origin}${path}`, { method: body ? "POST" : "GET", headers: { ...(cookies ? { cookie: cookies } : {}), ...(body ? { origin: requestOrigin, "content-type": "application/x-www-form-urlencoded" } : {}) }, body });
 }
 const input = (email = `${randomUUID()}@example.test`) => ({ displayName: "New <script>alert(1)</script>", email, status: "active" as const, roles: ["parent" as const], sites: [], approval: "approved" as const });
 const form = (data: ReturnType<typeof input>, version = "") => new URLSearchParams({ displayName: data.displayName, email: data.email, status: data.status, approval: data.approval, roles: data.roles[0]!, version });
@@ -192,6 +194,31 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
     expect(html).toContain("Read-only student");
     expect(html).toContain("Student record · no login account");
     expect(html).not.toContain("Force sign out");
+  });
+  it("defaults to Traditional Chinese and remembers an English preference per browser", async () => {
+    const zh = await request("/admin", admin.cookie, undefined, origin, null);
+    expect(zh.status).toBe(200);
+    const html = await zh.text();
+    expect(html).toContain('<html lang="zh-Hant">');
+    expect(html).toContain("總覽");
+    expect(html).toContain("待處理事項");
+    expect(html).toContain('name="lang" value="en"');
+    expect(await (await request("/admin/sign-in", undefined, undefined, origin, null)).text()).toContain("管理員登入");
+    expect(await (await request("/admin", admin.cookie)).text()).toContain('<html lang="en">');
+    const switched = await request("/admin/lang", admin.cookie, new URLSearchParams({ lang: "en", returnTo: "/admin/users?kind=adult" }), origin, null);
+    expect(switched.status).toBe(303);
+    expect(switched.headers.get("location")).toBe("/admin/users?kind=adult");
+    expect(switched.headers.get("set-cookie")).toContain("smz_admin_lang=en");
+    const rejected = await request("/admin/lang", admin.cookie, new URLSearchParams({ lang: "fr", returnTo: "https://evil.example/" }), origin, null);
+    expect(rejected.headers.get("location")).toBe("/admin");
+    expect(rejected.headers.get("set-cookie")).toBeNull();
+    expect((await request("/admin/lang", admin.cookie, new URLSearchParams({ lang: "en" }), "https://foreign.example", null)).status).toBe(403);
+    // Server-side validation and error messages follow the same locale.
+    const invalid = await request("/admin/directory/save", admin.cookie, new URLSearchParams({ kind: "families", displayName: "", code: "x", version: "a".repeat(64) }), origin, "zh-Hant");
+    expect(invalid.status).toBe(400);
+    expect(await invalid.text()).toContain("請輸入名稱");
+    const student = await request(`/admin/students?${new URLSearchParams({ needs: "class" })}`, admin.cookie, undefined, origin, "zh-Hant");
+    expect(await student.text()).toContain("未編入任何班級");
   });
   it("renders the overview, filtered lists and detail pages with relationship context", async () => {
     const overview = await request("/admin", admin.cookie);

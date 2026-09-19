@@ -7,6 +7,7 @@ import { people, families, classes, familyMemberships, classMemberships, personR
 import { isAdmin } from "./service.js";
 import { AdminError } from "./model.js";
 import { isDevelopmentIdentity } from "../development/policy.js";
+import { t } from "./i18n.js";
 
 const optionalId = z.union([z.uuid(), z.literal("")]).default("");
 const date = z.union([z.iso.date(), z.literal("")]).default("");
@@ -21,15 +22,15 @@ export const relationshipInput = z.object({
   startsOn: date, endsOn: date,
   returnTo: z.string().max(300).default("").transform(v => returnPath.test(v) ? v : ""),
 }).superRefine((v, c) => {
-  if (v.startsOn && v.endsOn && v.startsOn > v.endsOn) c.addIssue({ code: "custom", message: "End date must be on or after start date." });
+  if (v.startsOn && v.endsOn && v.startsOn > v.endsOn) c.addIssue({ code: "custom", message: t("End date must be on or after start date.") });
   if (["families", "students", "classes"].includes(v.kind)) {
-    if (!v.displayName || v.status === "inactive") c.addIssue({ code: "custom", message: "Enter a name and an active or disabled status." });
-    if (v.kind !== "students" && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/.test(v.code)) c.addIssue({ code: "custom", message: "Enter a code using letters, numbers, underscores or hyphens." });
+    if (!v.displayName || v.status === "inactive") c.addIssue({ code: "custom", message: t("Enter a name and an active or disabled status.") });
+    if (v.kind !== "students" && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/.test(v.code)) c.addIssue({ code: "custom", message: t("Enter a code using letters, numbers, underscores or hyphens.") });
   } else if (v.kind === "end-memberships") {
-    if (!v.membershipIds.length) c.addIssue({ code: "custom", message: "Select at least one membership to end." });
+    if (!v.membershipIds.length) c.addIssue({ code: "custom", message: t("Select at least one membership to end.") });
   } else if (v.kind === "class-transfer") {
-    if (!v.groupId || !v.membershipIds.length) c.addIssue({ code: "custom", message: "Choose a destination class and at least one enrollment to move." });
-  } else if (!v.groupId || (!v.id && !v.personId && !v.personIds.length) || v.status === "disabled") c.addIssue({ code: "custom", message: "Choose at least one person and an active or inactive status." });
+    if (!v.groupId || !v.membershipIds.length) c.addIssue({ code: "custom", message: t("Choose a destination class and at least one enrollment to move.") });
+  } else if (!v.groupId || (!v.id && !v.personId && !v.personIds.length) || v.status === "disabled") c.addIssue({ code: "custom", message: t("Choose at least one person and an active or inactive status.") });
 });
 export type RelationshipInput = z.infer<typeof relationshipInput>;
 type Connection = Pick<Database, "select">;
@@ -189,9 +190,9 @@ export function relationshipService(db: Database, config: RuntimeConfig) {
     return db.transaction(async tx => {
       await tx.execute(sql`select pg_advisory_xact_lock(73692041)`);
       const [live] = await tx.select().from(session).where(and(eq(session.id, sessionId), eq(session.userId, actorId), sql`${session.expiresAt} > now()`));
-      if (!live || !(await isAdmin(tx, config, actorId))) throw new AdminError("Administrator access is no longer active.", 403);
+      if (!live || !(await isAdmin(tx, config, actorId))) throw new AdminError(t("Administrator access is no longer active."), 403);
       const data = await relationshipSnapshot(tx);
-      if (data.version !== input.version) throw new AdminError("Directory records changed. Reload and review before saving.", 409);
+      if (data.version !== input.version) throw new AdminError(t("Directory records changed. Reload and review before saving."), 409);
       const ix = indexSnapshot(data);
       let id = input.id || randomUUID();
       const now = new Date();
@@ -203,17 +204,18 @@ export function relationshipService(db: Database, config: RuntimeConfig) {
       /** Validates and inserts one membership; `added` tracks rows created earlier in this same transaction for overlap checks. */
       async function addMembership(family: boolean, groupId: string, personId: string, relationship: RelationshipInput["relationship"], startsOn: string, endsOn: string, added: { groupId: string; personId: string; startsOn: string | null; endsOn: string | null }[]) {
         const group = (family ? ix.families : ix.classes).get(groupId), person = ix.persons.get(personId);
-        if (!group || !person) throw new AdminError("Choose an existing group and person.");
-        if (isDevelopmentIdentity(person.id)) throw new AdminError("Development identities are managed by their seeder.", 403);
+        if (!group || !person) throw new AdminError(t("Choose an existing group and person."));
+        if (isDevelopmentIdentity(person.id)) throw new AdminError(t("Development identities are managed by their seeder."), 403);
         // Class relationships follow from the person's kind; family relationships need an explicit choice for adults.
         const inferred = family ? (person.kind === "student" ? "child" : relationship) : (person.kind === "student" ? "student" : "teacher");
-        if (relationship && relationship !== inferred) throw new AdminError(`${person.displayName}: the relationship does not match the person's kind or school role.`);
+        const mismatch = () => new AdminError(t("{name}: the relationship does not match the person's kind or school role.", { name: person.displayName }));
+        if (relationship && relationship !== inferred) throw mismatch();
         const validRole = family ? (person.kind === "student" ? inferred === "child" : ["father", "mother", "guardian"].includes(inferred ?? "")) : (person.kind === "student" || ix.hasRole(person.id, "teacher"));
-        if (!validRole || !inferred) throw new AdminError(family && person.kind === "adult" && !relationship ? `Choose father, mother or guardian for ${person.displayName}.` : `${person.displayName}: the relationship does not match the person's kind or school role.`);
-        if (group.status !== "active" || person.status !== "active") throw new AdminError("Activate the person and group before assigning membership.");
+        if (!validRole || !inferred) throw family && person.kind === "adult" && !relationship ? new AdminError(t("Choose father, mother or guardian for {name}.", { name: person.displayName })) : mismatch();
+        if (group.status !== "active" || person.status !== "active") throw new AdminError(t("Activate the person and group before assigning membership."));
         const links = family ? data.familyLinks.map(r => ({ ...r, groupId: r.familyId })) : data.classLinks.map(r => ({ ...r, groupId: r.classId }));
         const overlap = (r: { groupId: string; personId: string; startsOn: string | null; endsOn: string | null; status?: string }) => r.groupId === groupId && r.personId === personId && (r.status ?? "active") === "active" && (!r.endsOn || !startsOn || r.endsOn >= startsOn) && (!endsOn || !r.startsOn || endsOn >= r.startsOn);
-        if (links.some(overlap) || added.some(overlap)) throw new AdminError(`${person.displayName} already has an overlapping membership in ${group.displayName}.`, 409);
+        if (links.some(overlap) || added.some(overlap)) throw new AdminError(t("{name} already has an overlapping membership in {group}.", { name: person.displayName, group: group.displayName }), 409);
         const membershipId = randomUUID(), values = membershipValues("active", startsOn, endsOn);
         if (family) await tx.insert(familyMemberships).values({ id: membershipId, familyId: groupId, personId, relationship: inferred as "child" | "father" | "mother" | "guardian", ...values });
         else await tx.insert(classMemberships).values({ id: membershipId, classId: groupId, personId, relationship: inferred as "student" | "teacher", ...values });
@@ -225,16 +227,16 @@ export function relationshipService(db: Database, config: RuntimeConfig) {
         const table = input.kind === "families" ? families : classes;
         const rows = input.kind === "families" ? data.families : data.classes;
         const previous = rows.find(r => r.id === id); before = previous;
-        if (input.id && !previous) throw new AdminError("Record not found.", 404);
-        if (previous && previous.code !== input.code) throw new AdminError("Codes are fixed to preserve links with consuming applications.");
-        if (rows.some(r => r.code === input.code && r.id !== id)) throw new AdminError("That code is already in use.", 409);
+        if (input.id && !previous) throw new AdminError(t("Record not found."), 404);
+        if (previous && previous.code !== input.code) throw new AdminError(t("Codes are fixed to preserve links with consuming applications."));
+        if (rows.some(r => r.code === input.code && r.id !== id)) throw new AdminError(t("That code is already in use."), 409);
         const values = { displayName: input.displayName, code: input.code, status: input.status as "active" | "disabled", updatedAt: now };
         if (previous) await tx.update(table).set(values).where(eq(table.id, id));
         else await tx.insert(table).values({ id, ...values });
       } else if (input.kind === "students") {
         section = "students";
         const previous = data.persons.find(r => r.id === id); before = previous;
-        if (input.id && (!previous || previous.kind !== "student")) throw new AdminError("Student not found.", 404);
+        if (input.id && (!previous || previous.kind !== "student")) throw new AdminError(t("Student not found."), 404);
         const values = { displayName: input.displayName, status: input.status as "active" | "disabled", updatedAt: now };
         if (previous) await tx.update(people).set(values).where(eq(people.id, id));
         else {
@@ -242,10 +244,10 @@ export function relationshipService(db: Database, config: RuntimeConfig) {
           await tx.insert(personRoles).values({ personId: id, role: "student" });
           if (input.groupId) {
             // Creating a student straight from a family or class page links them in the same transaction.
-            if (input.status !== "active") throw new AdminError("New students must be active to join a family or class.");
+            if (input.status !== "active") throw new AdminError(t("New students must be active to join a family or class."));
             ix.persons.set(id, { id, kind: "student", displayName: input.displayName, normalizedLoginEmail: null, status: "active", createdAt: now, updatedAt: now });
             const family = ix.families.has(input.groupId);
-            if (!family && !ix.classes.has(input.groupId)) throw new AdminError("Choose an existing family or class.");
+            if (!family && !ix.classes.has(input.groupId)) throw new AdminError(t("Choose an existing family or class."));
             await addMembership(family, input.groupId, id, family ? "child" : "student", input.startsOn, input.endsOn, []);
             landing = `/admin/${family ? "families" : "classes"}/${input.groupId}`;
           }
@@ -254,8 +256,8 @@ export function relationshipService(db: Database, config: RuntimeConfig) {
         const ended: string[] = [];
         for (const membershipId of input.membershipIds) {
           const familyLink = data.familyLinks.find(l => l.id === membershipId), classLink = data.classLinks.find(l => l.id === membershipId);
-          if (!familyLink && !classLink) throw new AdminError("Membership not found.", 404);
-          if (isDevelopmentIdentity((familyLink ?? classLink)!.personId)) throw new AdminError("Development identities are managed by their seeder.", 403);
+          if (!familyLink && !classLink) throw new AdminError(t("Membership not found."), 404);
+          if (isDevelopmentIdentity((familyLink ?? classLink)!.personId)) throw new AdminError(t("Development identities are managed by their seeder."), 403);
           if ((familyLink ?? classLink)!.status !== "active") continue;
           if (familyLink) await tx.update(familyMemberships).set({ status: "inactive", updatedAt: now }).where(eq(familyMemberships.id, membershipId));
           else await tx.update(classMemberships).set({ status: "inactive", updatedAt: now }).where(eq(classMemberships.id, membershipId));
@@ -270,9 +272,9 @@ export function relationshipService(db: Database, config: RuntimeConfig) {
         const moved: { from: string; to: string }[] = [], added: { groupId: string; personId: string; startsOn: string | null; endsOn: string | null }[] = [];
         for (const membershipId of input.membershipIds) {
           const link = data.classLinks.find(l => l.id === membershipId);
-          if (!link) throw new AdminError("Enrollment not found.", 404);
-          if (link.status !== "active") throw new AdminError("Only active enrollments can be moved.");
-          if (link.classId === input.groupId) throw new AdminError("Choose a different destination class.");
+          if (!link) throw new AdminError(t("Enrollment not found."), 404);
+          if (link.status !== "active") throw new AdminError(t("Only active enrollments can be moved."));
+          if (link.classId === input.groupId) throw new AdminError(t("Choose a different destination class."));
           await tx.update(classMemberships).set({ status: "inactive", updatedAt: now }).where(eq(classMemberships.id, membershipId));
           moved.push({ from: membershipId, to: await addMembership(false, input.groupId, link.personId, link.relationship, input.startsOn, input.endsOn, added) });
         }
@@ -285,16 +287,16 @@ export function relationshipService(db: Database, config: RuntimeConfig) {
         if (input.id) {
           const links = family ? data.familyLinks.map(r => ({ ...r, groupId: r.familyId })) : data.classLinks.map(r => ({ ...r, groupId: r.classId }));
           const previous = links.find(r => r.id === id); before = previous;
-          if (!previous || previous.groupId !== input.groupId || (input.personId && previous.personId !== input.personId) || (input.relationship && previous.relationship !== input.relationship)) throw new AdminError("Membership identity cannot be changed. End the old membership and add a new one.");
+          if (!previous || previous.groupId !== input.groupId || (input.personId && previous.personId !== input.personId) || (input.relationship && previous.relationship !== input.relationship)) throw new AdminError(t("Membership identity cannot be changed. End the old membership and add a new one."));
           const group = (family ? ix.families : ix.classes).get(previous.groupId), person = ix.persons.get(previous.personId);
-          if (isDevelopmentIdentity(previous.personId)) throw new AdminError("Development identities are managed by their seeder.", 403);
-          if (input.status === "active" && (group?.status !== "active" || person?.status !== "active")) throw new AdminError("Activate the person and group before assigning membership.");
-          if (input.status === "active" && links.some(r => r.id !== id && r.groupId === previous.groupId && r.personId === previous.personId && r.status === "active" && (!r.endsOn || !input.startsOn || r.endsOn >= input.startsOn) && (!input.endsOn || !r.startsOn || input.endsOn >= r.startsOn))) throw new AdminError("This person already has an overlapping membership in this group.", 409);
+          if (isDevelopmentIdentity(previous.personId)) throw new AdminError(t("Development identities are managed by their seeder."), 403);
+          if (input.status === "active" && (group?.status !== "active" || person?.status !== "active")) throw new AdminError(t("Activate the person and group before assigning membership."));
+          if (input.status === "active" && links.some(r => r.id !== id && r.groupId === previous.groupId && r.personId === previous.personId && r.status === "active" && (!r.endsOn || !input.startsOn || r.endsOn >= input.startsOn) && (!input.endsOn || !r.startsOn || input.endsOn >= r.startsOn))) throw new AdminError(t("This person already has an overlapping membership in this group."), 409);
           const values = membershipValues(input.status as "active" | "inactive", input.startsOn, input.endsOn);
           if (family) await tx.update(familyMemberships).set(values).where(eq(familyMemberships.id, id));
           else await tx.update(classMemberships).set(values).where(eq(classMemberships.id, id));
         } else {
-          if (input.status !== "active") throw new AdminError("New memberships start active. End a membership from its group page instead.");
+          if (input.status !== "active") throw new AdminError(t("New memberships start active. End a membership from its group page instead."));
           const added: { groupId: string; personId: string; startsOn: string | null; endsOn: string | null }[] = [];
           const ids = [...new Set([...input.personIds, input.personId].filter(Boolean))];
           const created: string[] = [];
