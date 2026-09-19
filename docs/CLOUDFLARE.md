@@ -1,6 +1,6 @@
 # Cloudflare deployment
 
-Magic-link login now coexists with Google; see [setup and validation](MAGIC-LINK.md). The existing hosted deployment is staging; the historical GitHub `production` environment name remains until secrets can be safely migrated.
+Magic-link login now coexists with Google; see [setup and validation](MAGIC-LINK.md). The hosted Cloudflare deployment uses the GitHub `staging` environment. `NODE_ENV=production` still enforces hosted security settings.
 
 ## Current provisioning scope
 
@@ -8,7 +8,7 @@ Cluster `smzwaldorf/smzwaldorf` contains the logical databases `smz-auth` (Auth)
 
 This supersedes the initial per-app cluster plan. `DEPLOY_DEMO_APPS=true` publishes both clients. CI registers their exact origins without importing people or granting directory access, migrates Auth using the existing `PLANETSCALE_DATABASE_URL` secret, and creates the Pages project if needed. Neither App A nor App B needs database credentials or migrations.
 
-On 2026-09-11, the default `postgres` database could not be renamed because PlanetScale Patroni connections use it. Auth's `auth`, `directory`, and `drizzle` schemas were copied to `smz-auth`; all 23 tables passed content-checksum comparison. Hyperdrive and the GitHub production migration secret now target `smz-auth`, and the live Auth health check passed. The original schemas remain in `postgres` as a recovery copy, not the active application database. The temporary transfer role was revoked. The extra `smz-app-b` cluster was deleted.
+On 2026-09-11, the default `postgres` database could not be renamed because PlanetScale Patroni connections use it. Auth's `auth`, `directory`, and `drizzle` schemas were copied to `smz-auth`; all 23 tables passed content-checksum comparison. Hyperdrive and the GitHub staging migration secret now target `smz-auth`, and the live Auth health check passed. The original schemas remain in `postgres` as a recovery copy, not the active application database. The temporary transfer role was revoked. The extra `smz-app-b` cluster was deleted.
 
 ## Runtime layout
 
@@ -29,7 +29,7 @@ App B keeps session data and OAuth tokens in AES-GCM encrypted Secure, HttpOnly,
 1. Choose three HTTPS origins: identity, App A, and App B. Cloudflare-provided domains are supported: `smz-auth.<account-subdomain>.workers.dev` for Auth, `smz-app-b.<account-subdomain>.workers.dev` for App B, and `<pages-project>.pages.dev` for App A. The generator enables `workers_dev` and omits custom-domain routes for these Worker hostnames. Custom Worker domains must belong to a zone in the target account; optional Pages custom domains must be configured separately.
 2. Create a PlanetScale **Postgres** database and production branch, then obtain its primary connection credentials. Do not use the PlanetScale MySQL/Vitess product or serverless MySQL driver. Create the Hyperdrive configuration using the PlanetScale connection details and **disable query caching**. Auth admission and revocation depend on fresh reads. The release workflow verifies `caching.disabled` through Cloudflare's API.
 3. When enabling demo apps, give the CI token Pages Write on the deployment account. CI ensures a Cloudflare Pages **Direct Upload** project with production branch `main` exists. Do not enable a second Git integration deployment path: GitHub Actions publishes it from the validated commit.
-4. Configure the GitHub `production` environment with the variables and secrets below. Restrict deployment to `main` with branch/environment protection appropriate to the repository.
+4. Configure the GitHub `staging` environment with the variables and secrets below. Restrict deployment to `main` with branch/environment protection appropriate to the repository.
 5. Register the exact Google Web OAuth redirect `${AUTH_ISSUER}/callback/google`. Only `openid profile email` is requested. Existing users must have pre-approved, exact verified Google emails.
 6. Prepare and review the production directory seed. Change every client public origin, callback and post-logout URL to match the hosted origins. The helper below creates a new ignored file without overwriting an existing one:
 

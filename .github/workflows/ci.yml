@@ -48,7 +48,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: validate
     runs-on: ubuntu-latest
-    environment: production
+    environment: staging
     env:
       MAGIC_LINK_ENABLED: ${{ vars.MAGIC_LINK_ENABLED }}
       MAGIC_LINK_FROM: Aida <info@useaida.app>
