@@ -1,0 +1,54 @@
+name: Seed hosted demo directory (guarded)
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check = run the inserts in a transaction and roll back; apply = commit"
+        type: choice
+        options: [check, apply]
+        default: check
+      database_confirm:
+        description: "Exact 'host/database' of the target (no credentials). Required for apply; derived automatically for check."
+        type: string
+        default: ""
+      parent_a_email:
+        description: "Demo Family A parent (controlled inbox; must not already exist)"
+        type: string
+        default: "harryworld@gmail.com"
+      parent_b_email:
+        description: "Demo Family B parent (controlled inbox; must differ from the staging admin and parent)"
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    env:
+      NODE_ENV: production
+      DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
+      DEMO_PARENT_A_EMAIL: ${{ inputs.parent_a_email }}
+      DEMO_PARENT_B_EMAIL: ${{ inputs.parent_b_email }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Resolve the destination guard
+        # The insert-only seed refuses to run unless DEMO_DATABASE_CONFIRM matches the target exactly. A rehearsal (check)
+        # rolls back, so its guard may be derived; an apply must be confirmed by the operator input.
+        run: |
+          target="$(node -e 'const u = new URL(process.env.DATABASE_URL); console.log(u.hostname + u.pathname)')"
+          echo "Target database: $target"
+          if [ "${{ inputs.mode }}" = "apply" ]; then
+            if [ "${{ inputs.database_confirm }}" != "$target" ]; then echo "database_confirm does not match the target; refusing to apply" >&2; exit 1; fi
+          fi
+          echo "DEMO_DATABASE_CONFIRM=$target" >> "$GITHUB_ENV"
+      - name: Plan
+        run: npm run seed:demo
+      - name: Rehearse or apply
+        run: npm run seed:demo -- --${{ inputs.mode }}

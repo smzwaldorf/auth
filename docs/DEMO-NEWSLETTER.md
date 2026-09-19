@@ -39,6 +39,8 @@ npm run seed:demo -- --check
 npm run seed:demo -- --apply
 ```
 
+For the hosted database, run the same command through the **Seed hosted demo directory (guarded)** Actions workflow (`workflow_dispatch`, deployment environment) instead of copying the PlanetScale connection string locally. Dispatch it in `check` mode first — it prints the target `host/database`, runs the inserts and rolls back — then dispatch `apply` with that exact value in `database_confirm` and the same controlled parent addresses. Deploys never run this seed; CI only recreates the two staging identities, so a reset database has no families, students or classes until this is applied.
+
 `DEMO_DATABASE_CONFIRM` is hostname plus `/database-name`, without password, username or port. Explicit shell variables override local env files. Auth uses `.env`; CMS uses `.env.local` then `.env`. For production execution set `NODE_ENV=production`; placeholder `.invalid`/`.test` addresses and development login are rejected by the Auth demo seed. If either real address already exists, stop and choose a separate demo address; this seed intentionally does not merge real identities.
 
 ## Send through the real application
