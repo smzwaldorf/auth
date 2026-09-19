@@ -10,10 +10,10 @@ Delivery is awaited, times out after ten seconds, and reports failure without lo
 
 ## Enable on the existing staging deployment
 
-The current Cloudflare deployment is **staging**. The GitHub environment still has the historical name `production`; keep it until secret parity for a renamed environment can be established. `NODE_ENV=production` continues enforcing hosted security settings. Do not change issuer URLs, Google callbacks, client IDs or existing secrets.
+The current Cloudflare deployment is **staging**. Actions use the GitHub `staging` environment. `NODE_ENV=production` continues enforcing hosted security settings. Do not change issuer URLs, Google callbacks, client IDs or existing secrets.
 
 1. Verify **useaida.app** in Resend and confirm it can send from `info@useaida.app`. Disable open/click tracking for authentication mail. The prior smzwaldorf.com setup is superseded for this feature; do not delete it automatically.
-2. Securely provision a sending-only `RESEND_API_KEY` in the existing GitHub deployment environment, scoped to useaida.app where supported.
+2. Securely provision a sending-only `RESEND_API_KEY` in the GitHub `staging` environment, scoped to useaida.app where supported.
 3. The confirmed emails are admin `smzwaldorf.education@gmail.com` and parent `buildwithharry@gmail.com`. Check their email-to-person mappings against the read-only CI account inventory. Configure `STAGING_ADMIN_EMAIL` and `STAGING_PARENT_EMAIL` as two distinct addresses. The code only checks existing roles: admin requires admin; parent requires parent and must not have admin. The login code never assigns roles or changes school records. The one-time `apply-staging-identities.ts` migration creates the two confirmed missing accounts with their selected roles, pending invitations, and App A/B grants. It rejects inventory conflicts, records an audit marker, and never restores revoked access or creates CMS grants. The September 13 read-only Actions inventory confirmed neither email existed.
 4. Set `MAGIC_LINK_ENABLED=true`. CI forwards this flag, mappings, approved sender and the Resend key. Hosted configuration fails closed if mappings or key are missing. The default remains false, so adding the code does not silently activate delivery.
 5. Release only by commit -> push main -> Actions validation -> Cloudflare deployment. A read-only Actions gate checks the two selected accounts before deployment.

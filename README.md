@@ -1,6 +1,6 @@
 # SMZ Identity and single-school directory
 
-Magic-link login now coexists with Google; see [setup and validation](docs/MAGIC-LINK.md). The existing hosted deployment is staging; the historical GitHub `production` environment name remains until secrets can be safely migrated.
+Magic-link login now coexists with Google; see [setup and validation](docs/MAGIC-LINK.md). The hosted Cloudflare deployment uses the GitHub `staging` environment. `NODE_ENV=production` still enforces hosted security settings.
 
 A first-party identity service for one school, with Node development entrypoints and Cloudflare deployment adapters: Pages for App A, Workers for Auth and App B, and PlanetScale Postgres through Hyperdrive.
 
