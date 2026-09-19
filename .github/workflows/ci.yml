@@ -86,13 +86,6 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           APP_B_CLIENT_SECRET: ${{ secrets.APP_B_CLIENT_SECRET }}
           APP_B_COOKIE_SECRET: ${{ secrets.APP_B_COOKIE_SECRET }}
-      - name: Reset the hosted Auth staging schemas once
-        if: contains(github.event.head_commit.message, '[reset-smz-auth-staging-2026-09-20]')
-        run: node scripts/reset-staging-auth-database.mjs
-        env:
-          DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
-          NODE_ENV: production
-          RESET_STAGING_AUTH_CONFIRM: reset-smz-auth-staging-2026-09-20
       - name: Apply additive database migrations via direct PlanetScale connection
         run: npm run db:migrate
         env:
