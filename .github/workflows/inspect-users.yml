@@ -6,7 +6,7 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    environment: staging
+    environment: production
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
