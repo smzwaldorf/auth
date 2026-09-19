@@ -86,11 +86,29 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           APP_B_CLIENT_SECRET: ${{ secrets.APP_B_CLIENT_SECRET }}
           APP_B_COOKIE_SECRET: ${{ secrets.APP_B_COOKIE_SECRET }}
+      - name: Reset the hosted Auth staging schemas once
+        if: contains(github.event.head_commit.message, '[reset-smz-auth-staging-2026-09-20]')
+        run: node scripts/reset-staging-auth-database.mjs
+        env:
+          DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
+          NODE_ENV: production
+          RESET_STAGING_AUTH_CONFIRM: reset-smz-auth-staging-2026-09-20
       - name: Apply additive database migrations via direct PlanetScale connection
         run: npm run db:migrate
         env:
           DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
           NODE_ENV: production
+      - name: Register deployed OIDC clients
+        if: vars.DEPLOY_DEMO_APPS == 'true' || vars.CMS_ORIGIN != ''
+        run: npx tsx packages/auth-server/src/seed/deploy-apps.ts
+        env:
+          DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
+          NODE_ENV: production
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          APP_B_CLIENT_SECRET: ${{ secrets.APP_B_CLIENT_SECRET }}
       - name: Add the two confirmed staging identities once
         if: vars.MAGIC_LINK_ENABLED == 'true'
         run: npx tsx packages/auth-server/src/seed/apply-staging-identities.ts
@@ -105,17 +123,6 @@ jobs:
       - name: Inspect confirmed staging login mappings (read only)
         if: vars.MAGIC_LINK_ENABLED == 'true'
         run: npx tsx packages/auth-server/src/seed/check-staging-logins.ts
-        env:
-          DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
-          NODE_ENV: production
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          APP_B_CLIENT_SECRET: ${{ secrets.APP_B_CLIENT_SECRET }}
-      - name: Register deployed OIDC clients
-        if: vars.DEPLOY_DEMO_APPS == 'true' || vars.CMS_ORIGIN != ''
-        run: npx tsx packages/auth-server/src/seed/deploy-apps.ts
         env:
           DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
           NODE_ENV: production
