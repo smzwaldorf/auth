@@ -18,11 +18,20 @@ export interface Env {
   GOOGLE_CLIENT_SECRET: string;
   APP_B_CLIENT_SECRET: string;
 }
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+
+let runtime: ReturnType<typeof createApp> | undefined;
+
+function appFor(env: Env) {
+  if (!runtime) {
     const config = parseRuntimeConfig({ ...env, NODE_ENV: "production" });
     const database = createDatabase(env.HYPERDRIVE.connectionString);
-    try { return await createApp(config, database.db).fetch(request); }
-    finally { await database.close(); }
+    runtime = createApp(config, database.db);
+  }
+  return runtime;
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    return appFor(env).fetch(request);
   },
 };
