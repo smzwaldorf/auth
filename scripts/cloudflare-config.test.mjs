@@ -14,5 +14,6 @@ test('generated Auth deployment preserves the additional parent allowlist',async
   assert.equal(result.status,0,result.stderr);
   const config=JSON.parse(await readFile(join(root,'.wrangler/deploy/auth.json'),'utf8'));
   assert.equal(config.vars.STAGING_PARENT_EMAILS,'parent-a@school.test,parent-b@school.test');
+  assert.equal(config.limits.cpu_ms,100);
  }finally{await rm(root,{recursive:true,force:true})}
 });
