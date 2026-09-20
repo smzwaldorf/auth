@@ -1,5 +1,6 @@
 import { createApp } from "./app.js";
 import { createDatabase } from "./db/database.js";
+import { requestDatabase, withRequestDatabase } from "./db/request-scope.js";
 import { parseRuntimeConfig } from "./runtime-config.js";
 export interface Env {
   MAGIC_LINK_ENABLED?: string;
@@ -24,14 +25,18 @@ let runtime: ReturnType<typeof createApp> | undefined;
 function appFor(env: Env) {
   if (!runtime) {
     const config = parseRuntimeConfig({ ...env, NODE_ENV: "production" });
-    const database = createDatabase(env.HYPERDRIVE.connectionString);
-    runtime = createApp(config, database.db);
+    runtime = createApp(config, requestDatabase);
   }
   return runtime;
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    return appFor(env).fetch(request);
+    const database = createDatabase(env.HYPERDRIVE.connectionString);
+    try {
+      return await withRequestDatabase(database.db, () => appFor(env).fetch(request));
+    } finally {
+      await database.close();
+    }
   },
 };

@@ -27,18 +27,26 @@ const env = {
 describe("Auth Worker runtime", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.createDatabase.mockReturnValue({ db: {}, close: mocks.close });
-    mocks.createApp.mockReturnValue({ fetch: mocks.fetch });
-    mocks.fetch.mockResolvedValue(new Response("ok"));
+    let requestNumber = 0;
+    mocks.createDatabase.mockImplementation(() => ({ db: { requestNumber: ++requestNumber }, close: mocks.close }));
+    mocks.createApp.mockImplementation((_config, database) => ({
+      fetch: vi.fn(async () => {
+        await Promise.resolve();
+        return new Response(String(database.requestNumber));
+      }),
+    }));
   });
 
-  it("reuses the database and Better Auth app across requests in one isolate", async () => {
-    await worker.fetch(new Request("https://auth.school.test/health"), env);
-    await worker.fetch(new Request("https://auth.school.test/api/auth/oauth2/token", { method: "POST" }), env);
+  it("reuses the Better Auth app while keeping database pools request scoped", async () => {
+    const [first, second] = await Promise.all([
+      worker.fetch(new Request("https://auth.school.test/health"), env),
+      worker.fetch(new Request("https://auth.school.test/api/auth/oauth2/token", { method: "POST" }), env),
+    ]);
 
-    expect(mocks.createDatabase).toHaveBeenCalledOnce();
+    expect(await first.text()).toBe("1");
+    expect(await second.text()).toBe("2");
+    expect(mocks.createDatabase).toHaveBeenCalledTimes(2);
     expect(mocks.createApp).toHaveBeenCalledOnce();
-    expect(mocks.fetch).toHaveBeenCalledTimes(2);
-    expect(mocks.close).not.toHaveBeenCalled();
+    expect(mocks.close).toHaveBeenCalledTimes(2);
   });
 });
