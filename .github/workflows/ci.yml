@@ -108,7 +108,7 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           APP_B_CLIENT_SECRET: ${{ secrets.APP_B_CLIENT_SECRET }}
       - name: Add the two confirmed staging identities once
-        if: vars.MAGIC_LINK_ENABLED == 'true'
+        if: vars.MAGIC_LINK_ENABLED == 'true' && vars.STAGING_BOOTSTRAP_APPROVED == 'true'
         run: npx tsx packages/auth-server/src/seed/apply-staging-identities.ts
         env:
           DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
@@ -130,7 +130,7 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           APP_B_CLIENT_SECRET: ${{ secrets.APP_B_CLIENT_SECRET }}
       - name: Grant and verify approved CMS access once
-        if: vars.MAGIC_LINK_ENABLED == 'true'
+        if: vars.MAGIC_LINK_ENABLED == 'true' && vars.STAGING_BOOTSTRAP_APPROVED == 'true'
         run: npx tsx packages/auth-server/src/seed/apply-staging-cms-access.ts
         env:
           DATABASE_URL: ${{ secrets.PLANETSCALE_DATABASE_URL }}
