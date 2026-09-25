@@ -6,7 +6,7 @@ import { createDirectory } from "../directory/service.js";
 import { eq } from "drizzle-orm";
 import { people } from "../db/schema.js";
 try {
-  if (config.AUTH_ISSUER !== "https://smz-auth.black-tree-204e.workers.dev/api/auth" || config.CMS_ORIGIN !== "https://smz-cms.pages.dev" || config.STAGING_ADMIN_EMAIL !== approvedStagingIdentities[0].email || config.STAGING_PARENT_EMAIL !== approvedStagingIdentities[1].email) throw new Error("Unexpected staging configuration");
+  if (config.AUTH_ISSUER !== "https://smz-auth.black-tree-204e.workers.dev/api/auth" || !(["https://smz-cms.pages.dev", "https://news.smzwaldorf.com"] as readonly (string | undefined)[]).includes(config.CMS_ORIGIN) || config.STAGING_ADMIN_EMAIL !== approvedStagingIdentities[0].email || config.STAGING_PARENT_EMAIL !== approvedStagingIdentities[1].email) throw new Error("Unexpected staging configuration");
   await grantStagingCmsAccess(db);
   for (const { email } of approvedStagingIdentities) {
     const [person] = await db.select().from(people).where(eq(people.normalizedLoginEmail, email));
