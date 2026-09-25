@@ -1,5 +1,12 @@
 # Cloudflare deployment
 
+> Staging naming migration (2026-09-25): deployment resource names now use `staging-smz-*` (`news` replaces `cms` in Cloudflare resource names). `DEPLOYMENT_ENVIRONMENT=production` selects `production-smz-*` names for a future separately provisioned production deployment. The GitHub environment still named `production` is the existing staging secret store; changing that store is a separate migration.
+>
+> Canonical staging URLs: `https://staging-auth.smzwaldorf.com`, `https://staging-news.smzwaldorf.com`, `https://staging-news-api.smzwaldorf.com`, `https://staging-app-a.smzwaldorf.com`, and `https://staging-app-b.smzwaldorf.com`. App A Pages is `staging-smz-app-a`. Existing databases, credentials, and OAuth client IDs are retained. Fresh browser sign-in is required after the issuer change.
+>
+> `STAGING_RESOURCE_MIGRATION=true` enables the guarded, resumable in-place rename step. Disable it after the first successful deployment. No resource is copied or deleted by that step. Prior URLs and names elsewhere in this document are historical.
+
+
 Magic-link login now coexists with Google; see [setup and validation](MAGIC-LINK.md). The existing hosted deployment is staging; Actions still deploy through the historical GitHub `production` environment, which holds the live secrets, until they are migrated to the prepared `staging` environment. `NODE_ENV=production` still enforces hosted security settings.
 
 ## Current provisioning scope

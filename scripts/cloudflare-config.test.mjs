@@ -15,5 +15,7 @@ test('generated Auth deployment preserves the additional parent allowlist',async
   const config=JSON.parse(await readFile(join(root,'.wrangler/deploy/auth.json'),'utf8'));
   assert.equal(config.vars.STAGING_PARENT_EMAILS,'parent-a@school.test,parent-b@school.test');
   assert.equal(config.limits.cpu_ms,100);
+  assert.equal(config.name,'staging-smz-auth');
+  assert.deepEqual(config.routes,[{pattern:'auth.school.test',custom_domain:true}]);
  }finally{await rm(root,{recursive:true,force:true})}
 });

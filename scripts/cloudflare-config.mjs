@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 const required = (name) => { const value = process.env[name]; if (!value) throw new Error(`Missing ${name}`); return value; };
+const deploymentEnvironment = process.env.DEPLOYMENT_ENVIRONMENT || "staging";
+if (!["staging", "production"].includes(deploymentEnvironment)) throw new Error("Invalid DEPLOYMENT_ENVIRONMENT");
 const deployApps = process.env.DEPLOY_DEMO_APPS === "true";
 const vars = Object.fromEntries(["AUTH_ISSUER", "APP_A_ORIGIN", "APP_B_ORIGIN"].map(name => [name, required(name)]));
 if (process.env.CMS_ORIGIN) vars.CMS_ORIGIN = process.env.CMS_ORIGIN;
@@ -20,6 +22,7 @@ for (const [name, source, hostname] of [["auth", "packages/auth-server", new URL
   if (name === "app-b" && !deployApps) continue;
   const config = JSON.parse(await fs.readFile(`${source}/wrangler.jsonc`, "utf8"));
   delete config.$schema;
+  config.name = `${deploymentEnvironment}-smz-${name}`;
   config.main = path.resolve(source, config.main);
   config.account_id = account;
   config.vars = { ...vars };
@@ -38,4 +41,4 @@ for (const [name, source, hostname] of [["auth", "packages/auth-server", new URL
   }
   await fs.writeFile(`.wrangler/deploy/${name}.json`, JSON.stringify(config, null, 2));
 }
-console.log("Generated production Worker configurations.");
+console.log("Generated environment-specific Worker configurations.");

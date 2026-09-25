@@ -48,8 +48,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: validate
     runs-on: ubuntu-latest
+    # Historical secret store; these resources are staging.
     environment: production
     env:
+      DEPLOYMENT_ENVIRONMENT: staging
       MAGIC_LINK_ENABLED: ${{ vars.MAGIC_LINK_ENABLED }}
       MAGIC_LINK_FROM: Aida <info@useaida.app>
       STAGING_ADMIN_EMAIL: ${{ vars.STAGING_ADMIN_EMAIL }}
@@ -75,6 +77,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Rename existing staging resources in place
+        if: vars.STAGING_RESOURCE_MIGRATION == 'true'
+        run: node scripts/rename-staging-resources.mjs
       - run: npm run cloudflare:configure
       - run: node scripts/check-hyperdrive.mjs
       - name: Prepare Worker secrets
