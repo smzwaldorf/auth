@@ -13,6 +13,6 @@ The historical GitHub environment `production` contains staging credentials. Thi
 
 Existing Cloudflare credentials and Google OAuth client credentials are reused. Add `https://auth.smzwaldorf.com/api/auth/callback/google` to the existing Google client before browser verification; retain staging callbacks.
 
-The workflow applies schema migrations and registers only the two News clients. It does not create people or grant access. The approved administrator must be provisioned separately before login verification. Magic-link login is disabled for this initial Google-only deployment because the current runtime's magic-link setup requires staging identities and uses an unrelated sender.
+The workflow applies schema migrations and registers only the two News clients. The optional `bootstrap_admin` input creates only the explicitly approved `smzwaldorf.education@gmail.com` administrator and its News access. It requires an empty directory and is false by default; use it only on the first deployment. Magic-link login is disabled for this initial Google-only deployment because the current runtime's magic-link setup requires staging identities and uses an unrelated sender.
 
 Deploy Auth before News. Verify discovery, Google callback, administrator access, and News login/logout. Resource deployment alone is not completion.
