@@ -69,7 +69,7 @@ jobs:
       - run: node scripts/cloudflare-secrets.mjs
       - run: npx wrangler deploy --dry-run --config .wrangler/deploy/auth.json
       - name: Apply production schema migrations
-        run: npm run db:migrate
+        run: node scripts/migrate-production.mjs
       - name: Register only production News clients
         run: npx tsx packages/auth-server/src/seed/deploy-apps.ts
       - name: Bootstrap approved production administrator
