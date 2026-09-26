@@ -1,0 +1,76 @@
+name: Deploy production Auth
+on:
+  workflow_dispatch:
+    inputs:
+      bootstrap_admin:
+        description: Create the approved SMZ administrator in an empty production directory
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: production-auth
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOYMENT_ENVIRONMENT: production
+      DEPLOY_DEMO_APPS: 'false'
+      DEPLOY_PAGES: 'false'
+      MAGIC_LINK_ENABLED: 'false'
+      NODE_ENV: production
+      AUTH_ISSUER: https://auth.smzwaldorf.com/api/auth
+      CMS_ORIGIN: https://news.smzwaldorf.com
+      # Required by the current Auth runtime; neither demo app is registered or deployed.
+      APP_A_ORIGIN: https://app-a.smzwaldorf.com
+      APP_B_ORIGIN: https://app-b.smzwaldorf.com
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_HYPERDRIVE_ID: ${{ vars.PRODUCTION_AUTH_HYPERDRIVE_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      BETTER_AUTH_SECRET: ${{ secrets.PRODUCTION_BETTER_AUTH_SECRET }}
+      APP_B_CLIENT_SECRET: ${{ secrets.PRODUCTION_UNUSED_APP_B_SECRET }}
+      CMS_OIDC_CLIENT_SECRET: ${{ secrets.PRODUCTION_CMS_OIDC_CLIENT_SECRET }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Ensure dedicated production connector
+        run: node scripts/provision-production-hyperdrive.mjs auth
+      - name: Verify production credentials and database target
+        run: |
+          node --input-type=module <<'JS'
+          const url = new URL(process.env.DATABASE_URL)
+          if (url.pathname !== '/production-auth' || !url.hostname.endsWith('.pg.psdb.cloud')) throw new Error('Wrong production database')
+          if ((process.env.CMS_OIDC_CLIENT_SECRET?.length ?? 0) < 32) throw new Error('Missing production CMS client secret')
+          JS
+          node scripts/check-hyperdrive.mjs
+      - run: npm run typecheck
+      - run: node --test scripts/cloudflare-config.test.mjs
+      - run: npm run build:auth
+      - run: npm run cloudflare:configure
+      - run: node scripts/cloudflare-secrets.mjs
+      - run: npx wrangler deploy --dry-run --config .wrangler/deploy/auth.json
+      - name: Apply production schema migrations
+        run: npm run db:migrate
+      - name: Register only production News clients
+        run: npx tsx packages/auth-server/src/seed/deploy-apps.ts
+      - name: Bootstrap approved production administrator
+        if: inputs.bootstrap_admin
+        run: npx tsx packages/auth-server/src/seed/production-admin.ts
+        env:
+          PRODUCTION_ADMIN_BOOTSTRAP_APPROVED: 'true'
+      - name: Deploy production Auth
+        run: npx wrangler deploy --config .wrangler/deploy/auth.json --secrets-file .wrangler/deploy/auth-secrets.json
+      - run: node scripts/smoke-deployment.mjs
+      - name: Remove temporary secret file
+        if: always()
+        run: rm -f .wrangler/deploy/auth-secrets.json

@@ -6,6 +6,7 @@ const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${ac
 if (!response.ok) throw new Error(`Hyperdrive verification failed (${response.status})`);
 const body = await response.json();
 if (!body.success || body.result?.caching?.disabled !== true) throw new Error("Hyperdrive caching must be disabled before deploying identity services");
-console.log("Verified Hyperdrive query caching is disabled.");
+if (process.env.DEPLOYMENT_ENVIRONMENT === "production" && body.result?.origin?.database !== "production-auth") throw new Error("Production Auth must use production-auth database");
+console.log("Verified Hyperdrive query caching and production database isolation.");
 
 }
