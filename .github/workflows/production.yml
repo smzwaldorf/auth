@@ -42,7 +42,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --include=dev
       - name: Ensure dedicated production connector
         run: node scripts/provision-production-hyperdrive.mjs auth
       - name: Verify production credentials and database target
