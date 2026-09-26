@@ -7,6 +7,15 @@ const { CLOUDFLARE_ACCOUNT_ID: account, CLOUDFLARE_API_TOKEN: token, DATABASE_UR
 if (!account || !token || !connectionString || !envFile) throw new Error('Missing production provisioning credentials');
 const url = new URL(connectionString);
 if (url.protocol !== 'postgresql:' || url.pathname !== `/${database}` || url.hostname !== 'aws-ap-northeast-1-2.pg.psdb.cloud' || !url.username || !url.password) throw new Error('Unexpected production database target');
+// PlanetScale emits libpq's sslrootcert=system, while node-postgres expects a file.
+// Node uses its trusted CA store when no explicit CA file is given.
+if (url.searchParams.get('sslrootcert') === 'system') {
+  url.searchParams.delete('sslrootcert');
+  url.searchParams.set('sslmode', 'verify-full');
+  const nodeUrl = url.toString();
+  console.log(`::add-mask::${nodeUrl}`);
+  appendFileSync(envFile, `DATABASE_URL=${nodeUrl}\n`);
+}
 const endpoint = `https://api.cloudflare.com/client/v4/accounts/${account}/hyperdrive/configs`;
 async function request(path = '', body) {
   const response = await fetch(endpoint + path, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
