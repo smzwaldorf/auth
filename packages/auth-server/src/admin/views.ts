@@ -4,9 +4,9 @@ import { currentLocale, currentPath, label, localeNames, locales, t, tn } from "
 export const escape = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const e = escape;
 type Service = ReturnType<typeof adminService>;
-export type NavKey = "overview" | "users" | "students" | "families" | "classes" | "applications";
+export type NavKey = "overview" | "users" | "students" | "families" | "classes" | "applications" | "family-profiles";
 const navigation: { group: string; items: [NavKey, string, string][] }[] = [
-  { group: "Directory", items: [["overview", "/admin", "Overview"], ["users", "/admin/users", "Users"], ["students", "/admin/students", "Students"], ["families", "/admin/families", "Families"], ["classes", "/admin/classes", "Classes"]] },
+  { group: "Directory", items: [["overview", "/admin", "Overview"], ["users", "/admin/users", "Users"], ["students", "/admin/students", "Students"], ["families", "/admin/families", "Families"], ["family-profiles", "/admin/family-profile-settings", "家庭與個人資料權限"], ["classes", "/admin/classes", "Classes"]] },
   { group: "Integrations", items: [["applications", "/admin/applications", "Applications"]] },
 ];
 export function accountMenu(person: { displayName: string; normalizedLoginEmail: string | null; roles: string[] }) {
@@ -58,12 +58,13 @@ export function languageSwitch() {
   const current = currentLocale();
   return `<form class="lang-switch" method="post" action="/admin/lang" aria-label="${e(t("Language"))}">${hidden("returnTo", currentPath())}${locales.map(l => `<button name="lang" value="${l}" ${l === current ? 'aria-current="true" disabled' : ""} lang="${l}">${localeNames[l]}</button>`).join("")}</form>`;
 }
-export function layout(title: string, content: string, showNavigation = true, active?: NavKey) {
+export function layout(title: string, content: string, showNavigation = true, active?: NavKey, options: { locale?: ReturnType<typeof currentLocale>; showLanguageSwitch?: boolean } = {}) {
+  const switcher = options.showLanguageSwitch === false ? "" : languageSwitch();
   const nav = navigation.map(section => `<div class="group">${e(t(section.group))}</div>${section.items.map(([key, href, label]) => `<a href="${href}" ${active === key ? 'aria-current="page"' : ""}>${e(t(label))}</a>`).join("")}`).join("");
   const body = showNavigation
-    ? `<div class="shell"><aside class="sidebar"><a class="brand" href="/admin">SMZ <span>/ Identity</span></a><nav aria-label="${e(t("Administration"))}">${nav}</nav><div class="sidebar-foot"><!--signed-in-account-->${languageSwitch()}<form method="post" action="/admin/sign-out"><button type="submit" class="secondary">${e(t("Sign out"))}</button></form></div></aside><main>${content}</main></div>`
-    : `<main class="solo">${languageSwitch()}${content}</main>`;
-  return `<!doctype html><html lang="${currentLocale()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(title)} · SMZ Identity</title><style>${css}</style></head><body>${body}</body></html>`;
+    ? `<div class="shell"><aside class="sidebar"><a class="brand" href="/admin">SMZ <span>/ Identity</span></a><nav aria-label="${e(t("Administration"))}">${nav}</nav><div class="sidebar-foot"><!--signed-in-account-->${switcher}<form method="post" action="/admin/sign-out"><button type="submit" class="secondary">${e(t("Sign out"))}</button></form></div></aside><main>${content}</main></div>`
+    : `<main class="solo">${switcher}${content}</main>`;
+  return `<!doctype html><html lang="${options.locale ?? currentLocale()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(title)} · SMZ Identity</title><style>${css}</style></head><body>${body}</body></html>`;
 }
 // ---- Shared building blocks -------------------------------------------------
 export const hidden = (name: string, value: string) => `<input type="hidden" name="${e(name)}" value="${e(value)}">`;

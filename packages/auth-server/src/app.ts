@@ -1,3 +1,7 @@
+import { profilePortal } from "./family-profiles/portal.js";
+import { personProfileService } from "./family-profiles/person-service.js";
+import { familyProfileRoutes } from "./family-profiles/routes.js";
+import { familyProfileService, ProfileError } from "./family-profiles/service.js";
 import { layout } from "./admin/views.js";
 import { adminAuthorizationUrl } from "./admin/sign-in.js";
 import { browserSignInError, signInErrorPage } from "./sign-in-error.js";
@@ -52,7 +56,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
     return null;
   }
 
-  app.use("*", (c, next) => secureHeaders({ referrerPolicy: (c.req.path === "/sign-in" || c.req.path === "/admin" || c.req.path.startsWith("/admin/")) ? "same-origin" : c.req.path.startsWith("/logout-all/") ? "origin" : "no-referrer" })(c, next));
+  app.use("*", (c, next) => secureHeaders({ referrerPolicy: (c.req.path === "/sign-in" || c.req.path === "/admin" || c.req.path.startsWith("/admin/") || c.req.path === "/profiles" || c.req.path.startsWith("/profiles/")) ? "same-origin" : c.req.path.startsWith("/logout-all/") ? "origin" : "no-referrer" })(c, next));
   app.use("*", async (c, next) => { c.header("Cache-Control", "no-store"); await next(); });
   app.use("*", async (c, next) => {
     if (localDevelopmentRequest(config, c.req.raw, c.env?.transport?.remoteAddress)) localDevelopmentRequests.add(c.req.raw);
@@ -78,7 +82,32 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
     return next();
   });
 
+  app.route("/profiles", profilePortal(db, config, auth));
+  app.get("/family", c => c.redirect("/profiles/family", 303));
+  app.get("/profile", c => c.redirect("/profiles/person", 303));
   app.route("/admin", adminRoutes(db, config, auth));
+  async function authenticateProfiles(request: Request) {
+    const token = request.headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1];
+    if (!token) throw new ProfileError(403, "請先登入。");
+    let payload;
+    try {
+      payload = await resourceClient.verifyBearerToken(token, {
+        jwksUrl: `${config.AUTH_ISSUER}/jwks`,
+        verifyOptions: { audience: directoryAudience, issuer: config.AUTH_ISSUER },
+        requiredScopes: ["directory:access"],
+      });
+    } catch (error) {
+      if (isAPIError(error) && (error.status === "UNAUTHORIZED" || error.status === "FORBIDDEN")) throw new ProfileError(403, "登入驗證失敗。");
+      const code = (error as { code?: string })?.code;
+      if (code?.startsWith("ERR_JWT_") || code?.startsWith("ERR_JWS_")) throw new ProfileError(403, "登入驗證失敗。");
+      throw error;
+    }
+    if (typeof payload.sub !== "string" || typeof payload.azp !== "string" || typeof payload.sid !== "string" || !hasOnlyExpectedAudiences(payload.aud, directoryAudience, `${config.AUTH_ISSUER}/oauth2/userinfo`)) throw new ProfileError(403, "登入驗證失敗。");
+    return { personId: payload.sub, clientId: payload.azp, sessionId: payload.sid };
+  }
+  app.route("/api/directory/v1/family-profiles", familyProfileRoutes(familyProfileService(db, config), authenticateProfiles));
+  app.route("/api/directory/v1/person-profiles", familyProfileRoutes(personProfileService(db, config), authenticateProfiles, "people"));
+
 
   app.get("/", async (c) => {
     c.header("Cache-Control", "no-store");
@@ -112,7 +141,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
       return [`<li><div><strong>${displayName}</strong><span>${escapeHtml(description)}</span></div><a href="${escapeHtml(launchUrl)}">Open <span aria-hidden="true">→</span></a></li>`];
     }).join("");
 
-    return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Apps · SMZ Identity</title><style>:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#28211d;background:#f2eee8}*{box-sizing:border-box}body{min-height:100vh;margin:0;padding:32px 20px;background:radial-gradient(circle at 10% 0%,#f0ddd0,transparent 38%),#f2eee8}main{width:min(100%,680px);margin:8vh auto 0;padding:36px;border:1px solid #ddd2c8;border-radius:24px;background:#fff;box-shadow:0 24px 70px #3827181f}header{margin-bottom:30px}.eyebrow{display:block;margin-bottom:7px;color:#8c7669;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}h1{margin:0 0 10px;font-size:32px;letter-spacing:-.04em}p{margin:0;color:#75675d;line-height:1.55}ul{display:grid;gap:12px;margin:0;padding:0;list-style:none}li{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px;border:1px solid #e6dbd3;border-radius:15px;background:#fcfaf8}li div{display:grid;gap:4px}li strong{font-size:17px}li span{color:#8c7669;font-size:13px}li a{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;padding:11px 14px;border-radius:10px;color:#fff;background:#8b3e25;text-decoration:none;font-weight:750}li a span{color:inherit;font-size:16px}.empty{padding:18px;border:1px dashed #d8c9bf;border-radius:15px}@media(max-width:520px){main{padding:26px}li{align-items:flex-start;flex-direction:column}li a{width:100%;justify-content:center}}</style></head><body><main><header><span class="eyebrow">SMZ Identity</span><a href="/admin" style="float:right;color:#8b3e25;font-size:14px">Admin Panel</a><h1>School applications</h1><p>Choose an app to get started. Use your school-approved account to sign in when prompted.</p></header>${appCards ? `<ul>${appCards}</ul>` : '<p class="empty">No apps are available yet. Please contact your school administrator.</p>'}</main><script>if("serviceWorker" in navigator){navigator.serviceWorker.getRegistrations().then((registrations)=>Promise.all(registrations.map((registration)=>registration.unregister())))}</script></body></html>`);
+    return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Apps · SMZ Identity</title><style>:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#28211d;background:#f2eee8}*{box-sizing:border-box}body{min-height:100vh;margin:0;padding:32px 20px;background:radial-gradient(circle at 10% 0%,#f0ddd0,transparent 38%),#f2eee8}main{width:min(100%,680px);margin:8vh auto 0;padding:36px;border:1px solid #ddd2c8;border-radius:24px;background:#fff;box-shadow:0 24px 70px #3827181f}header{margin-bottom:30px}.eyebrow{display:block;margin-bottom:7px;color:#8c7669;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}h1{margin:0 0 10px;font-size:32px;letter-spacing:-.04em}p{margin:0;color:#75675d;line-height:1.55}ul{display:grid;gap:12px;margin:0;padding:0;list-style:none}li{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px;border:1px solid #e6dbd3;border-radius:15px;background:#fcfaf8}li div{display:grid;gap:4px}li strong{font-size:17px}li span{color:#8c7669;font-size:13px}li a{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;padding:11px 14px;border-radius:10px;color:#fff;background:#8b3e25;text-decoration:none;font-weight:750}li a span{color:inherit;font-size:16px}.empty{padding:18px;border:1px dashed #d8c9bf;border-radius:15px}@media(max-width:520px){main{padding:26px}li{align-items:flex-start;flex-direction:column}li a{width:100%;justify-content:center}}</style></head><body><main><header><span class="eyebrow">SMZ Identity</span><a href="/admin" style="float:right;color:#8b3e25;font-size:14px">Admin Panel</a><h1>School applications</h1><p>Choose an app to get started. Use your school-approved account to sign in when prompted.</p></header><ul><li><div><strong>家庭與個人資料</strong><span>申請更新、審核與修訂紀錄</span></div><a href="/profiles">開啟</a></li></ul>${appCards ? `<ul>${appCards}</ul>` : '<p class="empty">No apps are available yet. Please contact your school administrator.</p>'}</main><script>if("serviceWorker" in navigator){navigator.serviceWorker.getRegistrations().then((registrations)=>Promise.all(registrations.map((registration)=>registration.unregister())))}</script></body></html>`);
   });
 
   app.get("/health", async (c) => {

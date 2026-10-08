@@ -32,7 +32,8 @@
     "cloudflare:configure": "node scripts/cloudflare-config.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
     "test:seed": "node --test scripts/demo-seed.test.mjs",
-    "seed:demo-admin": "node scripts/seed-demo-admin.mjs"
+    "seed:demo-admin": "node scripts/seed-demo-admin.mjs",
+    "test:profiles": "node scripts/test-family-profiles.mjs"
   },
   "devDependencies": {
     "npm-run-all": "^4.1.5",

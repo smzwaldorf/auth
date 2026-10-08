@@ -1,3 +1,5 @@
+import { recordAdministrativeName } from "../family-profiles/person-record.js";
+import { ProfileError } from "../family-profiles/shared.js";
 import { siteCatalog } from "./sites.js";
 import { and, eq, ilike, or, sql, inArray } from "drizzle-orm";
 import type { Database } from "../db/database.js";
@@ -105,6 +107,10 @@ export function adminService(db: Database, config: RuntimeConfig) {
         await tx.insert(user).values({ id: targetId, name: input.displayName, email: input.email, emailVerified: false });
         await tx.insert(loginInvitations).values({ id: crypto.randomUUID(), personId: targetId, normalizedEmail: input.email, status: "pending" });
       } else {
+        if (existing.displayName !== input.displayName) {
+          try { await recordAdministrativeName(tx, targetId, actorId, input.displayName); }
+          catch (error) { if (error instanceof ProfileError) throw new AdminError(error.message, error.status); throw error; }
+        }
         await tx.update(people).set({ displayName: input.displayName, status: input.status, updatedAt: now }).where(eq(people.id, targetId));
         await tx.update(user).set({ name: input.displayName, updatedAt: now }).where(eq(user.id, targetId));
         const [invitation] = await tx.select().from(loginInvitations).where(eq(loginInvitations.personId, targetId));

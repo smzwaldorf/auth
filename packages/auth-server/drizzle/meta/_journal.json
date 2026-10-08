@@ -36,6 +36,27 @@
       "when": 1788538940375,
       "tag": "0004_fix_oidc_resource_scopes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790074899747,
+      "tag": "0005_family_profile_approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790076966096,
+      "tag": "0006_person_profile_approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791441652294,
+      "tag": "0007_family_form_revisions",
+      "breakpoints": true
     }
   ]
 }
