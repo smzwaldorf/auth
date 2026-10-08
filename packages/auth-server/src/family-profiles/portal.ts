@@ -8,6 +8,7 @@ import type { RuntimeConfig } from "../runtime-config.js";
 import type { createAuth } from "../auth-factory.js";
 import { hasLiveSession } from "../global-logout.js";
 import { escape } from "../admin/views.js";
+import { isAdmin } from "../admin/service.js";
 import { ensureProfileClient, profileAuthorizationUrl } from "./sign-in.js";
 import { familyProfileService } from "./service.js";
 import { personProfileService } from "./person-service.js";
@@ -93,7 +94,12 @@ export function profilePortal(
     headers.delete("content-length");
     return new Response(null, { status: 303, headers });
   });
-  app.get("/signed-out", c => c.html(page("已登出", '<p>您已登出家庭與個人資料。</p><a class="button" href="/profiles">重新登入</a>')));
+  app.get("/signed-out", async c => {
+    const current = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (current && await hasLiveSession(db, current.user.id, current.session.id) && await isAdmin(db, config, current.user.id))
+      return c.redirect("/admin", 303);
+    return c.html(page("已登出", '<p>您已登出家庭與個人資料。</p><a class="button" href="/profiles">重新登入</a>'));
+  });
   app.use("*", async (c, next) => {
     const current = await auth.api.getSession({ headers: c.req.raw.headers });
     if (
@@ -104,6 +110,7 @@ export function profilePortal(
         return c.html(page("請重新登入", '<a href="/profiles">登入</a>'), 403);
       return c.redirect(await profileAuthorizationUrl(db, config), 303);
     }
+    if (await isAdmin(db, config, current.user.id)) return c.redirect("/admin", 303);
     const [person] = await rows<{ display_name: string; normalized_login_email: string | null }>(db,
       sql`select display_name, normalized_login_email from directory.people where id=${current.user.id}`);
     c.set("account", { name: person?.display_name ?? current.user.name, email: person?.normalized_login_email ?? current.user.email });

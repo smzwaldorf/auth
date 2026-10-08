@@ -761,6 +761,44 @@ describe.runIf(enabled)("native Auth profile portal", () => {
       },
     };
   }
+  it("routes admins to administration and parents to their family from the profiles entry point", async () => {
+    const app = createApp(config, db);
+    const adminLogin = await setupPortal(admin);
+    const parentLogin = await setupPortal(parent);
+    for (const [headers, destination] of [[adminLogin.headers, '/admin'], [parentLogin.headers, '/profiles/family']] as const) {
+      for (const path of ['/profiles', '/profiles?code=callback-code&state=callback-state']) {
+        const result = await app.request(path, { headers });
+        expect(result.status).toBe(303);
+        expect(result.headers.get('location')).toBe(destination);
+      }
+    }
+    for (const path of ['/profiles/', '/profiles/family', '/profiles/person', `/profiles/family/${family}?edit=1`, `/profiles/person/${parent.personId}`, '/profiles/unknown/nested/path', '/profiles/signed-out']) {
+      const result = await app.request(path, { headers: adminLogin.headers });
+      expect(result.status).toBe(303);
+      expect(result.headers.get('location')).toBe('/admin');
+    }
+    expect((await app.request(`/profiles/family/${family}`, { headers: parentLogin.headers })).status).toBe(200);
+    const submission = await app.request(`/profiles/family/${family}/submit-all`, { method: 'POST', headers: adminLogin.headers });
+    expect(submission.status).toBe(303);
+    expect(submission.headers.get('location')).toBe('/admin');
+    // Use current directory admission and roles rather than a cached session role.
+    await pool.query("delete from directory.person_roles where person_id=$1 and role='admin'", [admin.personId]);
+    expect((await app.request('/profiles', { headers: adminLogin.headers })).headers.get('location')).toBe('/profiles/family');
+    await pool.query("insert into directory.person_roles(person_id,role) values($1,'admin')", [admin.personId]);
+    await pool.query("update directory.people set status='disabled' where id=$1", [admin.personId]);
+    expect((await app.request('/profiles', { headers: adminLogin.headers })).headers.get('location')).toBe('/profiles/family');
+    await pool.query("delete from auth.session where id=$1", [admin.sessionId]);
+    expect((await app.request('/profiles', { headers: adminLogin.headers })).headers.get('location')).toContain('/oauth2/authorize?');
+  });
+  it("keeps admin logout available instead of redirecting it to the panel", async () => {
+    const { headers } = await setupPortal(admin);
+    const app = createApp(config, db);
+    const result = await app.request('/profiles/sign-out', { method: 'POST', headers });
+    expect(result.status).toBe(303);
+    expect(result.headers.get('location')).toBe('/profiles/signed-out');
+    expect((await pool.query('select id from auth.session where id=$1', [admin.sessionId])).rowCount).toBe(0);
+    expect((await app.request('/profiles/signed-out', { headers })).status).toBe(200);
+  });
   it("shows the live signed-in identity when viewing another parent, escaping account content", async () => {
     const { portal, headers } = await setupPortal();
     await pool.query("update directory.people set display_name=$1 where id=$2", ['登入家長 <script>alert(1)</script>', parent.personId]);
