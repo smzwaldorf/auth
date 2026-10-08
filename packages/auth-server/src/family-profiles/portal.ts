@@ -1,5 +1,6 @@
 import { familyDetails, familyFormScript, adultSummary } from "./family-form.js";
 import { Hono } from "hono";
+import { sql } from "drizzle-orm";
 import { bodyLimit } from "hono/body-limit";
 import { z, ZodError } from "zod";
 import type { Database } from "../db/database.js";
@@ -10,9 +11,9 @@ import { escape } from "../admin/views.js";
 import { ensureProfileClient, profileAuthorizationUrl } from "./sign-in.js";
 import { familyProfileService } from "./service.js";
 import { personProfileService } from "./person-service.js";
-import { ProfileError, type ProfileActor } from "./shared.js";
+import { ProfileError, rows, type ProfileActor } from "./shared.js";
 
-import { page, familyGraph, labels, displayValue, sameValue, fieldKeys, hidden, values, field, badge, timestamp } from "./views.js";
+import { type SignedInAccount, page, familyGraph, labels, displayValue, sameValue, fieldKeys, hidden, values, field, badge, timestamp } from "./views.js";
 
 /** Native Auth UI. Every service call retains live admission, client capabilities and review checks. */
 export function profilePortal(
@@ -20,7 +21,7 @@ export function profilePortal(
   config: RuntimeConfig,
   auth: Pick<ReturnType<typeof createAuth>, "api">,
 ) {
-  const app = new Hono<{ Variables: { actor: ProfileActor; nonce: string } }>();
+  const app = new Hono<{ Variables: { actor: ProfileActor; nonce: string; account: SignedInAccount } }>();
   const services = {
     family: familyProfileService(db, config),
     person: personProfileService(db, config),
@@ -80,6 +81,20 @@ export function profilePortal(
     // Native HTML forms use a strict Origin check, matching Auth administration.
     if (c.req.method !== "GET" && c.req.header("origin") !== origin)
       return c.html(page("無法送出", "<p>請從本網站送出表單。</p>"), 403);
+    return next();
+  });
+  // Logout remains available even when profile access or the session has expired.
+  app.post("/sign-out", async c => {
+    const response = await auth.api.signOutLinkedApplications({ headers: c.req.raw.headers, asResponse: true });
+    if (!response.ok) return response;
+    const headers = new Headers(response.headers);
+    headers.set("location", "/profiles/signed-out");
+    headers.delete("content-type");
+    headers.delete("content-length");
+    return new Response(null, { status: 303, headers });
+  });
+  app.get("/signed-out", c => c.html(page("已登出", '<p>您已登出家庭與個人資料。</p><a class="button" href="/profiles">重新登入</a>')));
+  app.use("*", async (c, next) => {
     const current = await auth.api.getSession({ headers: c.req.raw.headers });
     if (
       !current ||
@@ -89,6 +104,9 @@ export function profilePortal(
         return c.html(page("請重新登入", '<a href="/profiles">登入</a>'), 403);
       return c.redirect(await profileAuthorizationUrl(db, config), 303);
     }
+    const [person] = await rows<{ display_name: string; normalized_login_email: string | null }>(db,
+      sql`select display_name, normalized_login_email from directory.people where id=${current.user.id}`);
+    c.set("account", { name: person?.display_name ?? current.user.name, email: person?.normalized_login_email ?? current.user.email });
     // Direct links initialize the native client too, without changing existing grants.
     await ensureProfileClient(db, config);
     c.set("actor", {
@@ -115,6 +133,7 @@ export function profilePortal(
         kind === "family" ? "家庭資料" : "個人資料",
         `<div class="home-grid">${h.canReview ? `<section class="panel"><div class="panel-head"><h2>待審核申請</h2><span class="badge pending">${h.queue.length} 筆</span></div>${h.queue.length ? `<ul class="subject-list">${h.queue.map((q) => `<li><a href="/profiles/${kind}/${q.family_id ?? q.person_id}">${escape(q.family_name ?? q.person_name)}</a></li>`).join("")}</ul>` : '<p class="empty">目前沒有待審核申請。</p>'}</section>` : ""}<section class="panel"><div class="panel-head"><h2>${h.canReview ? "可查看的資料" : kind === "family" ? "我的家庭" : "我與同家庭家長的資料"}</h2></div>${subjects.length ? `<ul class="subject-list">${subjects.map((p) => `<li><a href="/profiles/${kind}/${p.id}">${escape(p.name)}</a></li>`).join("")}</ul>` : '<p class="empty">目前沒有可查看的資料。</p>'}</section></div>`,
         kind,
+        c.get("account"),
       ),
     );
   });
@@ -134,9 +153,9 @@ export function profilePortal(
     const submissions = p.submissions as unknown as Array<{ version: number; status: string; data: Record<string, string>; reason: string }>;
     const history = `<details class="panel history"><summary>修訂與申請紀錄</summary><div class="history-grid"><section><h2>正式修訂紀錄</h2>${"fullHistory" in p && !p.fullHistory ? '<p class="empty">個人修訂紀錄僅供資料本人與審核人員查看。</p>' : p.revisions.length ? p.revisions.map(v => `<details class="record"><summary>${v.revision === 0 ? "初始紀錄" : `第 ${v.revision} 版`}<small>${escape(timestamp(v.approved_at))} · ${escape(v.approved_name ?? "既有資料")}</small></summary>${values(v.data, kind)}${kind === "family" ? adultSummary(v.data) : ""}</details>`).join("") : '<p class="empty">核准後的版本會保留在這裡。</p>'}</section><section><h2>送審與處理紀錄</h2>${submissions.map(v => `<details class="record"><summary>送審版本 ${v.version} ${badge(v.status)}</summary>${values(v.data, kind)}${kind === "family" ? adultSummary(v.data) : ""}${v.reason ? `<p>${escape(v.reason)}</p>` : ""}</details>`).join("")}${p.events.length ? `<ol class="timeline">${p.events.map(e => `<li><time>${escape(timestamp(e.occurred_at))}</time><strong>${escape(actions[e.action] ?? e.action)}</strong> · ${escape(e.actor_name)}${e.reason ? `<p>${escape(e.reason)}</p>` : ""}</li>`).join("")}</ol>` : '<p class="empty">目前沒有送審或處理紀錄。</p>'}</section></div></details>`;
     const graph = "members" in p ? familyGraph(subject.name, p.members.map(m => ({ name: m.name, kind: m.kind, relationship: m.relationship }))) : "";
-    if ("family" in p) return c.html(page(subject.name, `${graph}${familyDetails(p, c.req.query("edit") === "1")}${history}<script nonce="${c.get("nonce")}">${familyFormScript}</script>`, kind));
+    if ("family" in p) return c.html(page(subject.name, `${graph}${familyDetails(p, c.req.query("edit") === "1")}${history}<script nonce="${c.get("nonce")}">${familyFormScript}</script>`, kind, c.get("account")));
     const body = `${delegatedNotice}${graph}<div class="workspace"><div class="stack">${current}${members}</div><div class="stack">${request || '<section class="panel"><h2>目前沒有進行中的申請</h2><p class="empty">申請人送出資料變更後，即可在此查看內容與審核。</p></section>'}</div></div>${history}`;
-    return c.html(page(subject.name, body, kind));
+    return c.html(page(subject.name, body, kind, c.get("account")));
   });
 
   app.post("/family/:id/submit-all", async c => {
@@ -223,6 +242,8 @@ export function profilePortal(
       page(
         "無法完成操作",
         `<p role="alert">${escape(e instanceof ProfileError ? e.message : e instanceof ZodError ? "請檢查欄位格式。" : "服務暫時無法使用。")}</p><a href="/profiles">重新載入</a>`,
+        undefined,
+        c.get("account"),
       ),
       e instanceof ProfileError ? e.status : e instanceof ZodError ? 400 : 503,
     ),

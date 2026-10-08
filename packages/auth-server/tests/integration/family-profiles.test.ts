@@ -761,6 +761,42 @@ describe.runIf(enabled)("native Auth profile portal", () => {
       },
     };
   }
+  it("shows the live signed-in identity when viewing another parent, escaping account content", async () => {
+    const { portal, headers } = await setupPortal();
+    await pool.query("update directory.people set display_name=$1 where id=$2", ['登入家長 <script>alert(1)</script>', parent.personId]);
+    const html = await (await portal.request(`/person/${guardian.personId}`, { headers })).text();
+    const account = html.match(/<section class="signed-in-account"[\s\S]*?<\/section>/)?.[0];
+    expect(account).toContain('登入家長 &lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(account).toContain(`${parent.personId}@example.test`);
+    expect(account).not.toContain(`${guardian.personId}@example.test`);
+    expect(account).toContain('method="post" action="/profiles/sign-out"');
+  });
+  it("requires same-origin POST logout and revokes the session even without profile access", async () => {
+    const { headers } = await setupPortal();
+    const app = createApp(config, db);
+    const live = async () => (await pool.query('select id from auth.session where id=$1', [parent.sessionId])).rowCount;
+    await app.request('/profiles/sign-out', { headers });
+    expect(await live()).toBe(1);
+    for (const origin of ['', 'https://untrusted.example']) {
+      expect((await app.request('/profiles/sign-out', { method: 'POST', headers: { ...headers, origin } })).status).toBe(403);
+      expect(await live()).toBe(1);
+    }
+    await pool.query("update auth.oauth_client set metadata='{}' where client_id='smz-profiles'");
+    const denied = await app.request(`/profiles/family/${family}`, { headers });
+    expect(denied.status).toBe(403);
+    expect(await denied.text()).toContain('action="/profiles/sign-out"');
+    const result = await app.request('/profiles/sign-out', { method: 'POST', headers });
+    expect(result.status).toBe(303);
+    expect(result.headers.get('location')).toBe('/profiles/signed-out');
+    expect(result.headers.get('set-cookie')).toMatch(/better-auth.session_token=;[^,]*Max-Age=0/i);
+    expect(await live()).toBe(0);
+    const landing = await app.request('/profiles/signed-out', { headers });
+    expect(landing.status).toBe(200);
+    expect(await landing.text()).toContain('已登出');
+    expect((await app.request(`/profiles/family/${family}`, { headers })).status).toBe(303);
+    expect((await app.request(`/profiles/family/${family}/submit-all`, { method: 'POST', headers })).status).toBe(403);
+    expect((await app.request('/profiles/sign-out', { method: 'POST', headers })).status).toBe(303);
+  });
   it("renders own family and children, and enforces native client permissions", async () => {
     const { portal, headers } = await setupPortal();
     const res = await portal.request(`/family/${family}`, { headers });
@@ -796,7 +832,7 @@ describe.runIf(enabled)("native Auth profile portal", () => {
     expect(html).toContain('取消編輯');
     expect(html).toContain(`action="/profiles/family/${family}/submit-all"`);
     expect(html).not.toContain('儲存草稿');
-    expect(html.match(/type="submit"/g)).toHaveLength(1);
+    expect(html.match(/<form[^>]*id="family-form"[^>]*>[\s\S]*?<\/form>/)?.[0].match(/type="submit"/g)).toHaveLength(1);
     const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
     expect(new Set(ids).size).toBe(ids.length);
     const requestId = randomUUID();
