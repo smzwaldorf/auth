@@ -15,19 +15,19 @@ export function adultSummary(data: Record<string, any>) {
     return `<article class="member"><h3>${e(a.removed && before ? before.data.displayName : a.data.displayName)} <span class="badge">${a.removed ? '移出家庭' : !before ? '新增成人' : '家長資料'}</span></h3><p>${e(relationships[a.relationship])}</p>${before ? `<details><summary>變更前</summary>${values(before.data, 'person')}<p>${e(relationships[before.relationship as keyof typeof relationships])}</p></details>` : ''}${a.removed ? '<p>核准後解除家庭關係，保留個人資料與歷史紀錄。</p>' : values(a.data, 'person')}</article>`;
   }).join('')}</div>`;
 }
-export function familyDetails(p: FamilyView, editRequested: boolean) {
-  const url = `/profiles/family/${p.family.id}`;
+export function familyDetails(p: FamilyView, editRequested: boolean, basePath = "/profiles") {
+  const url = `${basePath}/family/${p.family.id}`;
   const canEdit = p.canEditBundle && (!p.hasOpenRequest || !!p.openRequest && ['draft', 'returned'].includes(p.openRequest.status));
   const editing = editRequested && canEdit;
   const adults = [...p.adults].sort((a,b) => ['father','mother','guardian'].indexOf(a.relationship) - ['father','mother','guardian'].indexOf(b.relationship));
   const display = `<section class="panel family-display" aria-label="目前家庭資料"><div class="panel-head"><h2>目前家庭資料</h2>${canEdit && !editing ? `<a class="button" href="${url}?edit=1#family-details">編輯資料</a>` : `<span class="badge">第 ${p.profile.revision} 版</span>`}</div><p class="request-intro">以下為目前已核准的資料。</p>${values(p.profile.data,'family')}<div class="section-heading"><h3>家長與監護人</h3></div>${adults.map(a => `<article class="member"><h3>${e(a.data.displayName)} <span class="relationship">${e(relationships[a.relationship])}</span></h3>${values(a.data,'person',['contactPhone','contactEmail'])}</article>`).join('')}${p.openRequest?.status === 'returned' ? '<p class="notice returned">申請已退回，請按「編輯資料」修正後重新送出。</p>' : ''}${p.canEdit && !p.canEditBundle ? '<p class="notice">目前無法編輯此人的個人資料，請聯絡學校確認權限。</p>' : ''}</section>`;
-  if (editing) return `<div id="family-details" class="family-details is-editing">${display}<div class="family-editor"><div class="editor-toolbar"><a href="${url}#family-details">取消編輯</a></div>${unifiedFamilyForm(p)}</div></div>`;
-  return `<div id="family-details" class="family-details">${display}${p.hasOpenRequest && (!p.openRequest || p.openRequest.status === 'pending') ? unifiedFamilyForm(p) : ''}</div>`;
+  if (editing) return `<div id="family-details" class="family-details is-editing">${display}<div class="family-editor"><div class="editor-toolbar"><a href="${url}#family-details">取消編輯</a></div>${unifiedFamilyForm(p, basePath)}</div></div>`;
+  return `<div id="family-details" class="family-details">${display}${p.hasOpenRequest && (!p.openRequest || p.openRequest.status === 'pending') ? unifiedFamilyForm(p, basePath) : ''}</div>`;
 }
 
-export function unifiedFamilyForm(p: FamilyView) {
+export function unifiedFamilyForm(p: FamilyView, basePath = "/profiles") {
   const r = p.openRequest;
-  const url = `/profiles/family/${p.family.id}`;
+  const url = `${basePath}/family/${p.family.id}`;
   if (p.hasOpenRequest && !r) return '<section class="panel"><h2>已有進行中的申請</h2><p>請待目前申請處理完成後再更新家庭資料。</p></section>';
   if (r?.status === 'pending') {
     const actionForm = (action: string, title: string, required = false) => `<form method="post" action="${url}/${action}">${hidden('requestId',r.id)}${hidden('version',r.version)}${hidden('submissionVersion',r.submission_version)}${action !== 'withdraw' ? `<div class="field"><label for="family-${action}-reason">審核說明${required ? '（必填）' : '（選填）'}</label><textarea id="family-${action}-reason" name="reason" maxlength="1000" ${required ? 'required' : ''}></textarea></div>` : ''}<button class="${action === 'approve' ? '' : 'secondary'}">${title}</button></form>`;

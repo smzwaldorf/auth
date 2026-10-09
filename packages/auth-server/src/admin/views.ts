@@ -4,9 +4,9 @@ import { currentLocale, currentPath, label, localeNames, locales, t, tn } from "
 export const escape = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const e = escape;
 type Service = ReturnType<typeof adminService>;
-export type NavKey = "overview" | "users" | "students" | "families" | "classes" | "applications" | "family-profiles";
+export type NavKey = "overview" | "users" | "students" | "families" | "classes" | "applications" | "family-profiles" | "profile-reviews";
 const navigation: { group: string; items: [NavKey, string, string][] }[] = [
-  { group: "Directory", items: [["overview", "/admin", "Overview"], ["users", "/admin/users", "Users"], ["students", "/admin/students", "Students"], ["families", "/admin/families", "Families"], ["family-profiles", "/admin/family-profile-settings", "家庭與個人資料權限"], ["classes", "/admin/classes", "Classes"]] },
+  { group: "Directory", items: [["overview", "/admin", "Overview"], ["users", "/admin/users", "Users"], ["students", "/admin/students", "Students"], ["families", "/admin/families", "Families"], ["profile-reviews", "/admin/profile-reviews", "家庭與個人資料審核"], ["family-profiles", "/admin/family-profile-settings", "家庭與個人資料權限"], ["classes", "/admin/classes", "Classes"]] },
   { group: "Integrations", items: [["applications", "/admin/applications", "Applications"]] },
 ];
 export function accountMenu(person: { displayName: string; normalizedLoginEmail: string | null; roles: string[] }) {

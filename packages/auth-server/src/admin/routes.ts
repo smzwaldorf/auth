@@ -1,3 +1,4 @@
+import { profilePortal } from "../family-profiles/portal.js";
 import { profileAdministration } from "../family-profiles/admin.js";
 import { familyWizard } from "./family-wizard.js";
 import { classesList, directoryInsights, familiesList, groupContext, personContext, relationshipInput, relationshipService, studentsList, type ListFilters, type Snapshot } from "./relationships.js";
@@ -64,6 +65,7 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
       }
     });
   });
+  app.route("/profile-reviews", profilePortal(db, config, auth, { administration: true }));
   app.route("/family-profile-settings", profileAdministration(db, config));
   app.post("/lang", async c => {
     const body = await c.req.parseBody();

@@ -1,3 +1,4 @@
+import { relationshipInput, relationshipService } from "../../src/admin/relationships.js";
 import { createApp } from "../../src/app.js";
 import { createAuth } from "../../src/auth-factory.js";
 import { profilePortal } from "../../src/family-profiles/portal.js";
@@ -741,6 +742,43 @@ describe.runIf(enabled)("same-family member visibility", () => {
   });
 });
 
+describe.runIf(enabled)("family membership history boundary", () => {
+  it.each(['inactive', 'ended', 'scheduled'] as const)("creates a fresh membership when an %s guardian rejoins through directory administration", async state => {
+    const first = await pending();
+    await service.action(admin, first, 'approve', decision());
+    const second = await pending(parent, { ...data, mailingAddress: '歷史申請私密地址' });
+    expect((await service.profile(guardian, family)).openRequest?.id).toBe(second);
+    const relationships = relationshipService(db, config);
+    const original = (await relationships.snapshot()).familyLinks.find(m => m.personId === guardian.personId)!;
+    const save = async (fields: Record<string, unknown>) => relationships.save(admin.personId, admin.sessionId,
+      relationshipInput.parse({ kind: 'family-member', id: original.id, groupId: family, personId: guardian.personId,
+        version: (await relationships.snapshot()).version, ...fields }));
+    // Ordinary edits while access is continuous retain the history boundary.
+    expect((await save({ status: 'active' })).id).toBe(original.id);
+    const date = new Date(Date.now() + (state === 'ended' ? -1 : 1) * 86400_000).toISOString().slice(0, 10);
+    await save(state === 'inactive' ? { status: 'inactive' } : state === 'ended' ? { endsOn: date } : { startsOn: date });
+    await expect(service.profile(guardian, family)).rejects.toMatchObject({ status: 403 });
+    const rejoined = await save({ status: 'active' });
+    expect(rejoined.id).not.toBe(original.id);
+    const links = (await relationships.snapshot()).familyLinks;
+    expect(links.find(m => m.id === original.id)?.status).toBe('inactive');
+    expect(links.find(m => m.id === rejoined.id)).toMatchObject({ personId: guardian.personId, familyId: family, status: 'active' });
+    const view = await service.profile(guardian, family);
+    expect(view.profile).toMatchObject({ revision: 1, data });
+    expect(view.revisions).toHaveLength(0);
+    expect(view.submissions).toHaveLength(0);
+    expect(view.events).toHaveLength(0);
+    expect(view.hasOpenRequest).toBe(true);
+    expect(view.openRequest).toBeNull();
+    expect((await service.profile(parent, family)).revisions).toHaveLength(1);
+    expect((await service.profile(admin, family)).submissions).toHaveLength(2);
+    // New submissions made after the rejoin become visible under the new ID.
+    await service.action(parent, second, 'withdraw', decision());
+    const fresh = await pending(parent, { ...data, mailingAddress: '重新加入後的新地址' });
+    expect((await service.profile(guardian, family)).openRequest?.id).toBe(fresh);
+  });
+});
+
 describe.runIf(enabled)("native Auth profile portal", () => {
   async function setupPortal(a = parent) {
     await pool.query(
@@ -798,6 +836,57 @@ describe.runIf(enabled)("native Auth profile portal", () => {
     expect(result.headers.get('location')).toBe('/profiles/signed-out');
     expect((await pool.query('select id from auth.session where id=$1', [admin.sessionId])).rowCount).toBe(0);
     expect((await app.request('/profiles/signed-out', { headers })).status).toBe(200);
+  });
+  it.each([['family', 'approve'], ['family', 'return'], ['family', 'reject'], ['person', 'approve'], ['person', 'return'], ['person', 'reject']] as const)(
+    "lets admins review %s requests with %s under the admin panel", async (kind, action) => {
+      const { headers } = await setupPortal(admin);
+      const app = createApp(config, db);
+      const id = kind === 'family' ? randomUUID() : await pendingPerson();
+      if (kind === 'family') await service.submitForm(parent, family, id, await familyForm());
+      const target = kind === 'family' ? family : parent.personId;
+      const path = `/admin/profile-reviews/${kind}/${target}`;
+      const dashboard = await app.request('/admin', { headers });
+      expect(await dashboard.text()).toContain('href="/admin/profile-reviews"');
+      const queue = await app.request(`/admin/profile-reviews/${kind}`, { headers });
+      expect(queue.status).toBe(200);
+      expect(await queue.text()).toContain(`href="${path}"`);
+      const details = await app.request(path, { headers });
+      expect(details.status).toBe(200);
+      const html = await details.text();
+      expect(html).toContain(`action="${path}/${action}"`);
+      expect(html).toContain('href="/admin/profile-reviews/person"');
+      expect(html).not.toContain('action="/profiles/family/');
+      expect(html).not.toContain('action="/profiles/person/');
+      const body = new URLSearchParams({ requestId: id, version: kind === 'family' ? '1' : '3', submissionVersion: '1', reason: '已核對' });
+      const blocked = await app.request(`${path}/${action}`, { method: 'POST', headers: { ...headers, origin: 'https://untrusted.example' }, body });
+      expect(blocked.status).toBe(403);
+      const result = await app.request(`${path}/${action}`, { method: 'POST', headers, body });
+      expect(result.status).toBe(303);
+      expect(result.headers.get('location')).toBe(path);
+      const state = kind === 'family' ? await service.profile(parent, family) : await persons.profile(parent, parent.personId);
+      expect(state.profile.revision).toBe(action === 'approve' ? 1 : 0);
+      expect(state.submissions[0]?.status).toBe(({ approve: 'approved', return: 'returned', reject: 'rejected' })[action]);
+      expect((await app.request(path, { headers })).status).toBe(200);
+    },
+  );
+  it("protects admin review routes against parents, revoked roles, missing capabilities and self-review", async () => {
+    const app = createApp(config, db);
+    const adminLogin = await setupPortal(admin), parentLogin = await setupPortal(parent);
+    const id = await pending();
+    const path = `/admin/profile-reviews/family/${family}`;
+    const body = new URLSearchParams({ requestId: id, version: '3', submissionVersion: '1' });
+    for (const method of ['GET', 'POST']) {
+      const response = await app.request(method === 'GET' ? path : `${path}/approve`, { method, headers: parentLogin.headers, ...(method === 'POST' ? { body } : {}) });
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toBe('/admin');
+    }
+    await link(admin);
+    expect((await app.request(`${path}/approve`, { method: 'POST', headers: adminLogin.headers, body })).status).toBe(403);
+    expect((await service.profile(parent, family)).openRequest?.status).toBe('pending');
+    await pool.query("update auth.oauth_client set metadata='{}' where client_id='smz-profiles'");
+    expect((await app.request(path, { headers: adminLogin.headers })).status).toBe(403);
+    await pool.query("delete from directory.person_roles where person_id=$1 and role='admin'", [admin.personId]);
+    expect((await app.request(path, { headers: adminLogin.headers })).headers.get('location')).toBe('/admin');
   });
   it("shows the live signed-in identity when viewing another parent, escaping account content", async () => {
     const { portal, headers } = await setupPortal();

@@ -293,7 +293,15 @@ export function relationshipService(db: Database, config: RuntimeConfig) {
           if (input.status === "active" && (group?.status !== "active" || person?.status !== "active")) throw new AdminError(t("Activate the person and group before assigning membership."));
           if (input.status === "active" && links.some(r => r.id !== id && r.groupId === previous.groupId && r.personId === previous.personId && r.status === "active" && (!r.endsOn || !input.startsOn || r.endsOn >= input.startsOn) && (!input.endsOn || !r.startsOn || input.endsOn >= r.startsOn))) throw new AdminError(t("This person already has an overlapping membership in this group."), 409);
           const values = membershipValues(input.status as "active" | "inactive", input.startsOn, input.endsOn);
-          if (family) await tx.update(familyMemberships).set(values).where(eq(familyMemberships.id, id));
+          if (family && input.status === "active" && !effective(previous)) {
+            // Rejoining begins a new history-visibility boundary. Preserve the old
+            // membership ID in historical snapshots, but never make it active again.
+            await tx.update(familyMemberships).set({ status: "inactive", updatedAt: now }).where(eq(familyMemberships.id, id));
+            id = randomUUID();
+            await tx.insert(familyMemberships).values({ id, familyId: previous.groupId, personId: previous.personId,
+              relationship: previous.relationship as "child" | "father" | "mother" | "guardian", ...values });
+            after = { ...input, version: undefined, id, replacesMembershipId: previous.id };
+          } else if (family) await tx.update(familyMemberships).set(values).where(eq(familyMemberships.id, id));
           else await tx.update(classMemberships).set(values).where(eq(classMemberships.id, id));
         } else {
           if (input.status !== "active") throw new AdminError(t("New memberships start active. End a membership from its group page instead."));
