@@ -1,0 +1,4 @@
+ALTER TABLE "directory"."person_profile_revisions" DROP CONSTRAINT "person_revision_source";--> statement-breakpoint
+ALTER TABLE "directory"."person_profile_revisions" ADD COLUMN "family_request_id" uuid;--> statement-breakpoint
+ALTER TABLE "directory"."person_profile_revisions" ADD CONSTRAINT "person_profile_revisions_family_request_id_family_change_requests_id_fk" FOREIGN KEY ("family_request_id") REFERENCES "directory"."family_change_requests"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "directory"."person_profile_revisions" ADD CONSTRAINT "person_revision_source" CHECK ("directory"."person_profile_revisions"."source" in ('baseline','request','admin','family'));

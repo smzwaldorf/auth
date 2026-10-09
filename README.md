@@ -107,3 +107,7 @@ This supersedes earlier per-client and per-site grant descriptions in this docum
 ## Repeatable newsletter demo
 
 See [the two-family demo guide](docs/DEMO-NEWSLETTER.md) for insert-only synthetic seeds and the Resend inbox test. `npm run seed:demo` prints a plan; `--check` rehearses with rollback and `--apply` writes only a new fixture.
+
+## Family and personal profile approvals
+
+The native Auth portal at `/profiles` supports family submissions, personal profile change requests, independent admin/registrar approval, and revision history. See [setup and verification](docs/FAMILY-PROFILES.md).

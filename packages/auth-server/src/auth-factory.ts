@@ -96,6 +96,7 @@ export function createAuth(config: RuntimeConfig, db: Database, localDevelopment
         // login still needs to create the provider account link; the hooks below
         // reject any identity that is not an active, invited adult.
         prompt: "select_account",
+        overrideUserInfoOnSignIn: false,
         scopes: ["openid", "profile", "email"],
         async mapProfileToUser(profile) {
           if (profile.email_verified !== true) {
@@ -113,6 +114,14 @@ export function createAuth(config: RuntimeConfig, db: Database, localDevelopment
     },
     databaseHooks: {
       user: {
+        update: {
+          before: async (data, ctx) => {
+            if (ctx?.path === "/update-user" && data.name !== undefined) {
+              throw accessDenied("Name changes require a profile request and independent approval");
+            }
+            return { data };
+          },
+        },
         create: {
           before: async () => {
             await recordAuditEvent({ eventType: "identity.login.denied", actor: "better-auth", detail: { reason: "not_preapproved" } });
