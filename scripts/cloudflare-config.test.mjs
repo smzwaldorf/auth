@@ -19,3 +19,22 @@ test('generated Auth deployment preserves the additional parent allowlist',async
   assert.deepEqual(config.routes,[{pattern:'auth.school.test',custom_domain:true}]);
  }finally{await rm(root,{recursive:true,force:true})}
 });
+
+ test('dashboard-managed staging domains omit route mutations for both Workers',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'smz-routes-test-'));
+ try {
+  for(const source of ['packages/auth-server','apps/express-app']) {
+   await mkdir(join(root,source),{recursive:true});
+   await writeFile(join(root,source,'wrangler.jsonc'),await readFile(new URL(`../${source}/wrangler.jsonc`,import.meta.url)));
+  }
+  const result=spawnSync(process.execPath,[fileURLToPath(new URL('./cloudflare-config.mjs',import.meta.url))],{cwd:root,encoding:'utf8',env:{PATH:process.env.PATH,DEPLOYMENT_ENVIRONMENT:'staging',DEPLOY_DEMO_APPS:'true',PAGES_PROJECT_NAME:'staging-smz-app-a',CLOUDFLARE_MANAGE_ROUTES:'false',AUTH_ISSUER:'https://staging-auth.smzwaldorf.com/api/auth',APP_A_ORIGIN:'https://staging-app-a.smzwaldorf.com',APP_B_ORIGIN:'https://staging-app-b.smzwaldorf.com',CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_HYPERDRIVE_ID:'b'.repeat(32)}});
+  assert.equal(result.status,0,result.stderr);
+  for(const name of ['auth','app-b']) {
+   const config=JSON.parse(await readFile(join(root,`.wrangler/deploy/${name}.json`),'utf8'));
+   assert.equal(config.name,`staging-smz-${name}`);
+   assert.equal(config.workers_dev,false);
+   assert.equal('routes' in config,false);
+   assert.equal('route' in config,false);
+  }
+ }finally{await rm(root,{recursive:true,force:true})}
+});
