@@ -29,6 +29,7 @@ export default { async fetch(request, env) {
     const result = await client.query('select directory.applications.client_id, directory.applications.display_name, directory.applications.public_origin, auth.oauth_client.redirect_uris, auth.oauth_client.public from directory.applications inner join auth.oauth_client on directory.applications.client_id = auth.oauth_client.client_id where directory.applications.enabled = true and auth.oauth_client.disabled = false order by directory.applications.display_name');
     return Response.json({database:database.rows[0]?.name, applicationCount:result.rows.length});
   } catch (error) {
+    console.error(String(error?.stack ?? error).replace(/pscale_pw_[A-Za-z0-9_-]+/g, '[REDACTED]'));
     return Response.json({error:'Hyperdrive landing query failed', code:error.code ?? null, message:String(error.message).replace(/pscale_pw_[A-Za-z0-9_-]+/g, '[REDACTED]')}, {status:503});
   } finally { await client.end().catch(() => {}); }
 }};
