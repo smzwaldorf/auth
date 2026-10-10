@@ -12,6 +12,9 @@ jobs:
     environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      DEPLOYMENT_ENVIRONMENT: production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,6 +22,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Verify the production Hyperdrive landing-page query
+        run: |
+          node scripts/provision-production-hyperdrive.mjs auth
+          node scripts/diagnose-production-hyperdrive.mjs
       - name: Capture the exception for one production landing-page request
         run: |
           npx --no-install wrangler tail production-smz-auth --format json > worker-tail.ndjson 2>&1 &
