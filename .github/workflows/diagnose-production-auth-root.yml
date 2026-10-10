@@ -22,10 +22,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Verify the production Hyperdrive landing-page query
-        run: |
-          node scripts/provision-production-hyperdrive.mjs auth
-          node scripts/diagnose-production-hyperdrive.mjs
+      - name: Verify the production Hyperdrive connector
+        run: node scripts/provision-production-hyperdrive.mjs auth
+      - name: Run the production Hyperdrive landing-page query
+        run: node scripts/diagnose-production-hyperdrive.mjs
       - name: Capture the exception for one production landing-page request
         run: |
           npx --no-install wrangler tail production-smz-auth --format json > worker-tail.ndjson 2>&1 &
