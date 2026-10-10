@@ -52,6 +52,8 @@ jobs:
     environment: production
     env:
       DEPLOYMENT_ENVIRONMENT: staging
+      # Custom domains are managed in the dashboard; the token cannot edit zone routes.
+      CLOUDFLARE_MANAGE_ROUTES: "false"
       MAGIC_LINK_ENABLED: ${{ vars.MAGIC_LINK_ENABLED }}
       MAGIC_LINK_FROM: Aida <info@useaida.app>
       STAGING_ADMIN_EMAIL: ${{ vars.STAGING_ADMIN_EMAIL }}

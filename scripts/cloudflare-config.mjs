@@ -37,7 +37,11 @@ for (const [name, source, hostname] of [["auth", "packages/auth-server", new URL
     delete config.routes;
   } else {
     config.workers_dev = false;
-    config.routes = [{ pattern: hostname, custom_domain: true }];
+    if (process.env.CLOUDFLARE_MANAGE_ROUTES === "false") {
+      // Omission preserves dashboard-managed domains without zone route permissions.
+      delete config.routes;
+      delete config.route;
+    } else config.routes = [{ pattern: hostname, custom_domain: true }];
   }
   await fs.writeFile(`.wrangler/deploy/${name}.json`, JSON.stringify(config, null, 2));
 }
