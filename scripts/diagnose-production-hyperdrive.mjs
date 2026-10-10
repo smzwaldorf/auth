@@ -51,7 +51,10 @@ try {
   }
   if (!ready) throw new Error(`Hyperdrive preview did not become ready: ${output}`)
   const response = await fetch(endpoint,{method:'POST',headers,signal:AbortSignal.timeout(30000)})
-  console.info(JSON.stringify(await response.json()))
+  const body = await response.text()
+  let result
+  try { result = JSON.parse(body) } catch { throw new Error(`Unexpected Hyperdrive diagnostic response (${response.status}): ${body.slice(0, 500)}; ${output}`) }
+  console.info(JSON.stringify(result))
   if (!response.ok) process.exitCode = 1
 } finally {
   if (child.exitCode === null) { process.kill(-child.pid,'SIGTERM'); await Promise.race([once(child,'exit'),new Promise(resolve => setTimeout(resolve,5000))]); if (child.exitCode === null) process.kill(-child.pid,'SIGKILL') }
