@@ -1,0 +1,76 @@
+name: Reset production Auth (one-time)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type exactly "WIPE production-auth"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-auth
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    if: inputs.confirmation == 'WIPE production-auth'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOYMENT_ENVIRONMENT: production
+      NODE_ENV: production
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      BETTER_AUTH_SECRET: ${{ secrets.PRODUCTION_BETTER_AUTH_SECRET }}
+      APP_B_CLIENT_SECRET: ${{ secrets.PRODUCTION_UNUSED_APP_B_SECRET }}
+      CMS_OIDC_CLIENT_SECRET: ${{ secrets.PRODUCTION_CMS_OIDC_CLIENT_SECRET }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      AUTH_ISSUER: https://auth.smzwaldorf.com/api/auth
+      CMS_ORIGIN: https://news.smzwaldorf.com
+      APP_A_ORIGIN: https://app-a.smzwaldorf.com
+      APP_B_ORIGIN: https://app-b.smzwaldorf.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --include=dev
+      - name: Wipe only the confirmed production Auth schemas
+        run: |
+          node --input-type=module <<'JS'
+          import pg from 'pg';
+          const url = new URL(process.env.DATABASE_URL);
+          if (url.protocol !== 'postgresql:' || url.pathname !== '/production-auth' || url.hostname !== 'aws-ap-northeast-1-2.pg.psdb.cloud') throw new Error('Unexpected production Auth target');
+          const client = new pg.Client({ connectionString: url.toString(), connectionTimeoutMillis: 15000 });
+          await client.connect();
+          try {
+            const { rows } = await client.query('SELECT current_database() AS name');
+            if (rows[0]?.name !== 'production-auth') throw new Error('Unexpected connected database');
+            await client.query('BEGIN');
+            await client.query("SELECT pg_advisory_xact_lock(hashtext('reset-production-auth-v1'))");
+            await client.query('DROP SCHEMA IF EXISTS auth CASCADE');
+            await client.query('DROP SCHEMA IF EXISTS directory CASCADE');
+            await client.query('DROP SCHEMA IF EXISTS drizzle CASCADE');
+            await client.query('DROP SCHEMA IF EXISTS public CASCADE');
+            await client.query('CREATE SCHEMA public');
+            await client.query('COMMIT');
+            console.info('Wiped production-auth schemas');
+          } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+          } finally { await client.end(); }
+          JS
+      - name: Recreate the Auth schema
+        run: node scripts/migrate-production.mjs
+      - name: Register production News clients
+        run: npx tsx packages/auth-server/src/seed/deploy-apps.ts
+      - name: Seed the approved production administrators
+        run: npx tsx packages/auth-server/src/seed/production-admin.ts
+        env:
+          PRODUCTION_ADMIN_BOOTSTRAP_APPROVED: 'true'
+      - run: node scripts/smoke-deployment.mjs
