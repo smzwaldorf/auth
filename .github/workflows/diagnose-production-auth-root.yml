@@ -17,13 +17,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
       - name: Capture the exception for one production landing-page request
         run: |
-          npx wrangler tail production-smz-auth --format json > worker-tail.ndjson 2>&1 &
+          npx --no-install wrangler tail production-smz-auth --format json > worker-tail.ndjson 2>&1 &
           tail_pid=$!
           sleep 5
           curl --silent --show-error --output /dev/null --write-out 'landing HTTP %{http_code}\n' https://auth.smzwaldorf.com/
-          sleep 5
+          sleep 10
           kill "$tail_pid" || true
           wait "$tail_pid" || true
           sed -E 's/(pscale_pw_|sk_)[A-Za-z0-9_-]+/[REDACTED]/g' worker-tail.ndjson
