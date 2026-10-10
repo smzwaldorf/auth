@@ -16,14 +16,15 @@ it("enables CMS only with an explicit secure deployment origin", () => {
   for (const CMS_ORIGIN of ["http://localhost:5174", "https://cms.example.com", "https://smz-cms.pages.dev/path", "https://user:password@smz-cms.pages.dev"]) expect(() => parseRuntimeConfig({ ...production, CMS_ORIGIN })).toThrow();
 });
 
-it("requires two distinct confirmed staging emails and delivery credentials before hosted magic links", () => {
+it("requires delivery credentials for production magic links without importing a staging allowlist", () => {
   expect(() => parseRuntimeConfig({ ...production, MAGIC_LINK_ENABLED: "true" })).toThrow();
-  const enabled = { ...production, MAGIC_LINK_ENABLED: "true", STAGING_ADMIN_EMAIL: "admin@example.invalid", STAGING_PARENT_EMAIL: "parent@example.invalid", RESEND_API_KEY: "re_test" };
+  const enabled = { ...production, MAGIC_LINK_ENABLED: "true", RESEND_API_KEY: "re_test" };
   expect(parseRuntimeConfig(enabled).MAGIC_LINK_FROM).toBe("Aida <info@useaida.app>");
-  expect(() => parseRuntimeConfig({ ...enabled, STAGING_PARENT_EMAIL: enabled.STAGING_ADMIN_EMAIL })).toThrow();
-  expect(parseRuntimeConfig({ ...enabled, STAGING_PARENT_EMAILS: "second@example.invalid, third@example.invalid" }).STAGING_PARENT_EMAILS).toEqual(["second@example.invalid", "third@example.invalid"]);
-  expect(() => parseRuntimeConfig({ ...enabled, STAGING_PARENT_EMAILS: `${enabled.STAGING_ADMIN_EMAIL}` })).toThrow();
-  expect(() => parseRuntimeConfig({ ...enabled, STAGING_PARENT_EMAILS: `${enabled.STAGING_PARENT_EMAIL},second@example.invalid` })).toThrow();
+  const staging = { ...enabled, STAGING_ADMIN_EMAIL: "admin@example.invalid", STAGING_PARENT_EMAIL: "parent@example.invalid" };
+  expect(() => parseRuntimeConfig({ ...staging, STAGING_PARENT_EMAIL: staging.STAGING_ADMIN_EMAIL })).toThrow();
+  expect(parseRuntimeConfig({ ...staging, STAGING_PARENT_EMAILS: "second@example.invalid, third@example.invalid" }).STAGING_PARENT_EMAILS).toEqual(["second@example.invalid", "third@example.invalid"]);
+  expect(() => parseRuntimeConfig({ ...staging, STAGING_PARENT_EMAILS: `${staging.STAGING_ADMIN_EMAIL}` })).toThrow();
+  expect(() => parseRuntimeConfig({ ...staging, STAGING_PARENT_EMAILS: `${staging.STAGING_PARENT_EMAIL},second@example.invalid` })).toThrow();
   expect(() => parseRuntimeConfig({ ...enabled, RESEND_API_KEY: "" })).toThrow();
 });
 

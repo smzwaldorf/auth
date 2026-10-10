@@ -20,7 +20,7 @@ jobs:
       DEPLOYMENT_ENVIRONMENT: production
       DEPLOY_DEMO_APPS: 'false'
       DEPLOY_PAGES: 'false'
-      MAGIC_LINK_ENABLED: 'false'
+      MAGIC_LINK_ENABLED: 'true'
       NODE_ENV: production
       AUTH_ISSUER: https://auth.smzwaldorf.com/api/auth
       CMS_ORIGIN: https://news.smzwaldorf.com
@@ -36,6 +36,7 @@ jobs:
       CMS_OIDC_CLIENT_SECRET: ${{ secrets.PRODUCTION_CMS_OIDC_CLIENT_SECRET }}
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

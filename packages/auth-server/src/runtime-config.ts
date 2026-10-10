@@ -24,7 +24,7 @@ const schema = z.object({
 export type RuntimeConfig = z.infer<typeof schema>;
 export function parseRuntimeConfig(input: Record<string, unknown>): RuntimeConfig {
   const config = schema.parse(input);
-  if (config.STAGING_ADMIN_EMAIL || config.STAGING_PARENT_EMAIL || config.STAGING_PARENT_EMAILS.length || (config.NODE_ENV === "production" && config.MAGIC_LINK_ENABLED === "true")) {
+  if (config.STAGING_ADMIN_EMAIL || config.STAGING_PARENT_EMAIL || config.STAGING_PARENT_EMAILS.length) {
     z.email().parse(config.STAGING_ADMIN_EMAIL);
     if (config.STAGING_PARENT_EMAIL) z.email().parse(config.STAGING_PARENT_EMAIL);
     for (const email of config.STAGING_PARENT_EMAILS) z.email().parse(email);
