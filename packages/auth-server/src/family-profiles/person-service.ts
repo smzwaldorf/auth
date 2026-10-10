@@ -1,3 +1,4 @@
+import type { ProfileAccessMode } from "./shared.js";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/database.js";
@@ -24,8 +25,8 @@ const saveInput = z
     reason: z.string().trim().max(1000),
   })
   .strict();
-export function personProfileService(db: Database, config: RuntimeConfig) {
-  const run = profileAccess(db, config, "personProfiles");
+export function personProfileService(db: Database, config: RuntimeConfig, accessMode: ProfileAccessMode = "client") {
+  const run = profileAccess(db, config, "personProfiles", accessMode);
   // Both people must be current adult guardians in the same active family.
   // Re-evaluate this condition inside the directory transaction for every operation.
   const editablePerson = (actorId: string) => sql`p.kind='adult' and p.status='active' and exists (select 1 from directory.people editor where editor.id=${actorId} and editor.kind='adult' and editor.status='active') and (

@@ -16,7 +16,7 @@ import { ProfileError, rows, type ProfileActor } from "./shared.js";
 
 import { type SignedInAccount, page as renderPage, familyGraph, labels, displayValue, sameValue, fieldKeys, hidden, values, field, badge, timestamp } from "./views.js";
 
-/** Native Auth UI. Every service call retains live admission, client capabilities and review checks. */
+/** Native admin review uses Auth admin authorization; the parent portal retains client checks. */
 export function profilePortal(
   db: Database,
   config: RuntimeConfig,
@@ -27,8 +27,8 @@ export function profilePortal(
   const basePath = options.administration ? "/admin/profile-reviews" : "/profiles";
   const page = (title: string, body: string, kind?: string, account?: SignedInAccount) => renderPage(title, body, kind, account, basePath);
   const services = {
-    family: familyProfileService(db, config),
-    person: personProfileService(db, config),
+    family: familyProfileService(db, config, options.administration ? "administration" : "client"),
+    person: personProfileService(db, config, options.administration ? "administration" : "client"),
   };
   type ProfileView = Awaited<ReturnType<typeof services.family.profile>> | Awaited<ReturnType<typeof services.person.profile>>;
   function renderRequest(p: ProfileView, kind: "family" | "person", actionUrl: string, familyId?: string) {
@@ -120,11 +120,11 @@ export function profilePortal(
       sql`select display_name, normalized_login_email from directory.people where id=${current.user.id}`);
     c.set("account", { name: person?.display_name ?? current.user.name, email: person?.normalized_login_email ?? current.user.email });
     // Direct links initialize the native client too, without changing existing grants.
-    await ensureProfileClient(db, config);
+    if (!options.administration) await ensureProfileClient(db, config);
     c.set("actor", {
       personId: current.user.id,
       sessionId: current.session.id,
-      clientId: "smz-profiles",
+      clientId: options.administration ? "" : "smz-profiles",
     });
     return next();
   });
@@ -134,15 +134,15 @@ export function profilePortal(
   app.get("/:kind", async (c) => {
     const kind = kindOf(c.req.param("kind"));
     const h = await services[kind].home(c.get("actor"));
-    const own = "families" in h ? h.families : h.people;
+    const own = options.administration ? [] : ("families" in h ? h.families : h.people);
     const review = "reviewFamilies" in h ? h.reviewFamilies : h.reviewPeople;
     const subjects = [
       ...own,
-      ...review.filter((p) => !own.some((o) => o.id === p.id)),
+      ...review.filter((p) => !own.some((o) => o.id === p.id) && !(options.administration && kind === "person" && p.id === c.get("actor").personId)),
     ];
     return c.html(
       page(
-        kind === "family" ? "家庭資料" : "個人資料",
+        options.administration ? (kind === "family" ? "家庭資料變更審核" : "個人資料變更審核") : (kind === "family" ? "家庭資料" : "個人資料"),
         `<div class="home-grid">${h.canReview ? `<section class="panel"><div class="panel-head"><h2>待審核申請</h2><span class="badge pending">${h.queue.length} 筆</span></div>${h.queue.length ? `<ul class="subject-list">${h.queue.map((q) => `<li><a href="${basePath}/${kind}/${q.family_id ?? q.person_id}">${escape(q.family_name ?? q.person_name)}</a></li>`).join("")}</ul>` : '<p class="empty">目前沒有待審核申請。</p>'}</section>` : ""}<section class="panel"><div class="panel-head"><h2>${h.canReview ? "可查看的資料" : kind === "family" ? "我的家庭" : "我與同家庭家長的資料"}</h2></div>${subjects.length ? `<ul class="subject-list">${subjects.map((p) => `<li><a href="${basePath}/${kind}/${p.id}">${escape(p.name)}</a></li>`).join("")}</ul>` : '<p class="empty">目前沒有可查看的資料。</p>'}</section></div>`,
         kind,
         c.get("account"),
@@ -152,7 +152,8 @@ export function profilePortal(
   app.get("/:kind/:id", async (c) => {
     const kind = kindOf(c.req.param("kind")),
       id = z.uuid().parse(c.req.param("id"));
-    const p = await services[kind].profile(c.get("actor"), id);
+    const result = await services[kind].profile(c.get("actor"), id);
+    const p = options.administration ? { ...result, canEdit: false, ...("canEditBundle" in result ? {canEditBundle: false} : {}) } : result;
     const subject = "family" in p ? p.family : p.person,
       r = p.openRequest;
     const actionUrl = `${basePath}/${kind}/${id}`;
@@ -171,6 +172,7 @@ export function profilePortal(
   });
 
   app.post("/family/:id/submit-all", async c => {
+    if (options.administration) throw new ProfileError(403, "管理審核頁面僅供審核申請。");
     const id = z.uuid().parse(c.req.param("id"));
     const body = await c.req.parseBody();
     const indices = Object.keys(body).filter(k => /^adult-\d+-id$/.test(k)).map(k => k.split('-')[1]);
@@ -199,6 +201,7 @@ export function profilePortal(
         "withdraw",
       ])
       .parse(c.req.param("action"));
+    if (options.administration && !["approve", "return", "reject"].includes(action)) throw new ProfileError(403, "管理審核頁面僅供審核申請。");
     const b = await c.req.parseBody(),
       requestId = z.uuid().parse(b.requestId),
       actor = c.get("actor"),

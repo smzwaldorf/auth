@@ -1,3 +1,4 @@
+import { isAdmin } from "../admin/authorization.js";
 import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "../db/database.js";
 import type { RuntimeConfig } from "../runtime-config.js";
@@ -25,10 +26,12 @@ export async function rows<T = Record<string, any>>(
   return (await db.execute(query)).rows as T[];
 }
 export const activeMembership = sql`m.status='active' and (m.starts_on is null or m.starts_on <= (now() at time zone 'UTC')::date) and (m.ends_on is null or m.ends_on >= (now() at time zone 'UTC')::date)`;
+export type ProfileAccessMode = "client" | "administration";
 export function profileAccess(
   db: Database,
   config: RuntimeConfig,
   capability: "familyProfiles" | "personProfiles",
+  mode: ProfileAccessMode = "client",
 ) {
   async function run<T>(
     actor: ProfileActor,
@@ -43,22 +46,31 @@ export function profileAccess(
       await tx.execute(sql`select pg_advisory_xact_lock(73692041)`);
       if (!(await hasLiveSession(tx, actor.personId, actor.sessionId)))
         throw new ProfileError(403, "登入或權限已失效，請重新登入。");
-      const context = await createDirectory(tx, config).getAccessContext(
-        actor.personId,
-        actor.clientId,
-      );
-      const [client] = await rows(
-        tx,
-        sql`select 1 from auth.oauth_client where client_id=${actor.clientId} and disabled=false and public=false and metadata->>${capability}='true'`,
-      );
-      if (!context || !client)
-        throw new ProfileError(403, "此帳號或應用程式沒有此資料的存取權限。");
+      // The mode is chosen by the server route, never by a request or client ID.
+      // Native admin review reuses Auth's admission policy inside the write transaction.
+      let administrator: boolean;
+      if (mode === "administration") {
+        administrator = await isAdmin(tx, config, actor.personId);
+        if (!administrator) throw new ProfileError(403, "需要有效的管理員權限。");
+      } else {
+        const context = await createDirectory(tx, config).getAccessContext(
+          actor.personId,
+          actor.clientId,
+        );
+        const [client] = await rows(
+          tx,
+          sql`select 1 from auth.oauth_client where client_id=${actor.clientId} and disabled=false and public=false and metadata->>${capability}='true'`,
+        );
+        if (!context || !client)
+          throw new ProfileError(403, "此帳號或應用程式沒有此資料的存取權限。");
+        administrator = context.roles.includes("admin");
+      }
       const memberships = await rows(
         tx,
         sql`select m.id, m.family_id from directory.family_memberships m join directory.families f on f.id=m.family_id where m.person_id=${actor.personId} and m.relationship in ('father','mother','guardian') and ${activeMembership} and f.status='active'`,
       );
       const reviewer =
-        context.roles.includes("admin") ||
+        administrator ||
         (
           await rows(
             tx,

@@ -5,23 +5,12 @@ import { and, eq, ilike, or, sql, inArray } from "drizzle-orm";
 import type { Database } from "../db/database.js";
 import type { RuntimeConfig } from "../runtime-config.js";
 import { people, personRoles, oauthClient, user, loginInvitations, applications, appAccess, auditEvents, session, oauthAccessToken, oauthRefreshToken, familyMemberships, classMemberships, families, classes } from "../db/schema.js";
-import { loginAllowed } from "../login-policy.js";
+import { isAdmin } from "./authorization.js";
+export { isAdmin } from "./authorization.js";
 import { isDevelopmentIdentity } from "../development/policy.js";
-import { validDevelopmentIdentity } from "../development/identity.js";
 import { AdminError, protectSelf, type UserInput } from "./model.js";
 import { t } from "./i18n.js";
 
-type Connection = Pick<Database, "select">;
-export async function isAdmin(db: Connection, config: RuntimeConfig, id: string) {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return false;
-  const [person] = await db.select({ id: people.id }).from(people)
-    .innerJoin(personRoles, and(eq(personRoles.personId, people.id), eq(personRoles.role, "admin")))
-    .where(and(eq(people.id, id), eq(people.kind, "adult"), eq(people.status, "active"))).limit(1);
-  // Both policy helpers only select; keep the transaction's reads on its connection.
-  return Boolean(person) && (isDevelopmentIdentity(id)
-    ? validDevelopmentIdentity(db as Database, config, id)
-    : loginAllowed(db as Database, config, id));
-}
 export function adminService(db: Database, config: RuntimeConfig) {
   async function forceSignOut(actorId: string, actorSessionId: string, targetId: string) {
     await db.transaction(async tx => {

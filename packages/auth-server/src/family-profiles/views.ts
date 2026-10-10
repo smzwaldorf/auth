@@ -1,5 +1,5 @@
 import { formatPhone, normalizePhone } from "./phone.js";
-import { escape as e } from "../admin/views.js";
+import { layout, escape as e } from "../admin/views.js";
 
 export const labels: Record<string, string> = {
   mailingAddress: "通訊地址", contactPhone: "聯絡電話", displayName: "姓名", contactEmail: "聯絡信箱",
@@ -71,5 +71,12 @@ h2{font-size:19px;line-height:1.4;margin:0}h3{font-size:16px;margin:0 0 8px}p{ma
 export type SignedInAccount = { name: string; email: string };
 export function page(title: string, body: string, kind?: string, account?: SignedInAccount, basePath = "/profiles") {
   const caption = kind === "family" ? "家庭資料" : "個人資料";
-  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(title)} · SMZ Identity</title><style>${css}</style></head><body><header class="topbar"><div class="topbar-inner"><a class="brand" href="${basePath}"><span class="brand-mark">SMZ</span>家庭與個人資料</a><div class="header-actions">${basePath === "/admin/profile-reviews" ? '<a class="app-link" href="/admin">返回管理後台</a>' : ""}<a class="app-link" href="/">校園應用程式 ↗</a>${account ? `<section class="signed-in-account" aria-label="目前登入帳號"><div class="account-identity"><small>目前登入</small><strong>${e(account.name)}</strong><span>${e(account.email)}</span></div><form method="post" action="/profiles/sign-out"><button type="submit" class="secondary">登出</button></form></section>` : ""}</div></div></header><main><nav class="tabs" aria-label="資料導覽"><a href="${basePath}/family" ${kind === "family" ? 'aria-current="page"' : ""}>家庭資料</a><a href="${basePath}/person" ${kind === "person" ? 'aria-current="page"' : ""}>個人資料</a></nav><header class="page-head">${kind ? `<p class="eyebrow">${caption} / 資料維護</p>` : ""}<h1>${e(title)}</h1>${kind ? '<p>讓學校保持聯繫。您送出的變更，會在管理員或註冊組核准後更新。</p>' : ""}</header>${body}<p class="history-note">時間以臺灣時間顯示。</p></main></body></html>`;
+  if (basePath === "/admin/profile-reviews") {
+    // Scope portal-specific components so they cannot restyle the shared admin sidebar.
+    const scopedCss = css.replace(":root{", ":scope{");
+    return layout(title, `<style>@scope (.profile-review) {${scopedCss}
+:scope{background:transparent}.page-head{display:block}.tabs{margin-bottom:24px}}</style><div class="profile-review"><nav class="tabs" aria-label="資料審核類別"><a href="${basePath}/family" ${kind === "family" ? 'aria-current="page"' : ""}>家庭資料</a><a href="${basePath}/person" ${kind === "person" ? 'aria-current="page"' : ""}>個人資料</a></nav><header class="page-head"><h1>${e(title)}</h1><p>檢視送審內容，核准後才會更新正式資料。您也可以退回修改或不核准。</p></header>${body}<p class="history-note">時間以臺灣時間顯示。</p></div>`, true, "profile-reviews");
+  }
+
+  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(title)} · SMZ Identity</title><style>${css}</style></head><body><header class="topbar"><div class="topbar-inner"><a class="brand" href="${basePath}"><span class="brand-mark">SMZ</span>家庭與個人資料</a><div class="header-actions">${basePath === "/admin/profile-reviews" ? '<a class="app-link" href="/admin">返回管理後台</a>' : ""}<a class="app-link" href="/">校園應用程式 ↗</a>${account ? `<section class="signed-in-account" aria-label="目前登入帳號"><div class="account-identity"><small>目前登入</small><strong>${e(account.name)}</strong><span>${e(account.email)}</span></div><form method="post" action="/profiles/sign-out"><button type="submit" class="secondary">登出</button></form></section>` : ""}</div></div></header><main><nav class="tabs" aria-label="資料導覽"><a href="${basePath}/family" ${kind === "family" ? 'aria-current="page"' : ""}>家庭資料</a><a href="${basePath}/person" ${kind === "person" ? 'aria-current="page"' : ""}>個人資料</a></nav><header class="page-head">${kind ? `<p class="eyebrow">${caption} / 資料維護</p>` : ""}<h1>${e(title)}</h1>${kind ? (basePath === "/admin/profile-reviews" ? '<p>檢視送審內容，核准後才會更新正式資料。您也可以退回修改或不核准。</p>' : '<p>讓學校保持聯繫。您送出的變更，會在管理員或註冊組核准後更新。</p>') : ""}</header>${body}<p class="history-note">時間以臺灣時間顯示。</p></main></body></html>`;
 }

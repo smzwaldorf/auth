@@ -803,6 +803,10 @@ describe.runIf(enabled)("native Auth profile portal", () => {
     const app = createApp(config, db);
     const adminLogin = await setupPortal(admin);
     const parentLogin = await setupPortal(parent);
+    expect(await (await app.request('/admin', { headers: adminLogin.headers })).text()).not.toContain('/admin/family-profile-settings');
+    for (const method of ['GET', 'POST']) {
+      expect((await app.request('/admin/family-profile-settings', {method, headers: adminLogin.headers})).status).toBe(404);
+    }
     for (const [headers, destination] of [[adminLogin.headers, '/admin'], [parentLogin.headers, '/profiles/family']] as const) {
       for (const path of ['/profiles', '/profiles?code=callback-code&state=callback-state']) {
         const result = await app.request(path, { headers });
@@ -841,6 +845,8 @@ describe.runIf(enabled)("native Auth profile portal", () => {
     "lets admins review %s requests with %s under the admin panel", async (kind, action) => {
       const { headers } = await setupPortal(admin);
       const app = createApp(config, db);
+      // Auth admin review is independent of the parent portal's OAuth registration.
+      await pool.query("delete from auth.oauth_client where client_id='smz-profiles'");
       const id = kind === 'family' ? randomUUID() : await pendingPerson();
       if (kind === 'family') await service.submitForm(parent, family, id, await familyForm());
       const target = kind === 'family' ? family : parent.personId;
@@ -854,6 +860,9 @@ describe.runIf(enabled)("native Auth profile portal", () => {
       expect(details.status).toBe(200);
       const html = await details.text();
       expect(html).toContain(`action="${path}/${action}"`);
+      expect(html).toContain('<aside class="sidebar">');
+      expect(html).toContain('href="/admin/profile-reviews" aria-current="page"');
+      expect(html).not.toContain('class="topbar"');
       expect(html).toContain('href="/admin/profile-reviews/person"');
       expect(html).not.toContain('action="/profiles/family/');
       expect(html).not.toContain('action="/profiles/person/');
@@ -869,7 +878,7 @@ describe.runIf(enabled)("native Auth profile portal", () => {
       expect((await app.request(path, { headers })).status).toBe(200);
     },
   );
-  it("protects admin review routes against parents, revoked roles, missing capabilities and self-review", async () => {
+  it("protects admin review routes against parents, revoked roles and self-review", async () => {
     const app = createApp(config, db);
     const adminLogin = await setupPortal(admin), parentLogin = await setupPortal(parent);
     const id = await pending();
@@ -884,9 +893,42 @@ describe.runIf(enabled)("native Auth profile portal", () => {
     expect((await app.request(`${path}/approve`, { method: 'POST', headers: adminLogin.headers, body })).status).toBe(403);
     expect((await service.profile(parent, family)).openRequest?.status).toBe('pending');
     await pool.query("update auth.oauth_client set metadata='{}' where client_id='smz-profiles'");
-    expect((await app.request(path, { headers: adminLogin.headers })).status).toBe(403);
+    expect((await app.request(path, { headers: adminLogin.headers })).status).toBe(200);
     await pool.query("delete from directory.person_roles where person_id=$1 and role='admin'", [admin.personId]);
     expect((await app.request(path, { headers: adminLogin.headers })).headers.get('location')).toBe('/admin');
+  });
+  it("rechecks admin authority in the service and keeps client API access separate", async () => {
+    const native = familyProfileService(db, config, "administration");
+    const id = await pending();
+    await expect(native.home(parent)).rejects.toMatchObject({status:403});
+    await pool.query("update auth.oauth_client set metadata='{}' where client_id='profile-test'");
+    await expect(service.home(admin)).rejects.toMatchObject({status:403});
+    expect((await native.home(admin)).canReview).toBe(true);
+    await pool.query("delete from directory.person_roles where person_id=$1 and role='admin'",[admin.personId]);
+    await expect(native.action(admin,id,"approve",decision())).rejects.toMatchObject({status:403});
+    await pool.query("insert into directory.person_roles(person_id,role) values($1,'admin')",[admin.personId]);
+    await pool.query("update directory.people set status='disabled' where id=$1",[admin.personId]);
+    await expect(native.home(admin)).rejects.toMatchObject({status:403});
+    await pool.query("update directory.people set status='active' where id=$1",[admin.personId]);
+    await pool.query("delete from auth.session where id=$1",[admin.sessionId]);
+    await expect(native.action(admin,id,"approve",decision())).rejects.toMatchObject({status:403});
+    expect((await pool.query("select status from directory.family_change_requests where id=$1",[id])).rows[0].status).toBe('pending');
+  });
+  it("keeps admin review separate from personal editing", async () => {
+    const {headers}=await setupPortal(admin);
+    const app=createApp(config,db);
+    const path=`/admin/profile-reviews/person/${admin.personId}`;
+    const own=await app.request(path,{headers});
+    expect(own.status).toBe(200);
+    const html=await own.text();
+    expect(html).toContain('<aside class="sidebar">');
+    expect(html).not.toContain(`action="${path}/create"`);
+    const list=await (await app.request('/admin/profile-reviews/person',{headers})).text();
+    expect(list).not.toContain(`href="${path}"`);
+    for(const action of ['create','save','submit','withdraw']) {
+      expect((await app.request(`${path}/${action}`,{method:'POST',headers,body:new URLSearchParams({requestId:randomUUID()})})).status).toBe(403);
+    }
+    expect((await app.request(`/admin/profile-reviews/family/${family}/submit-all`,{method:'POST',headers})).status).toBe(403);
   });
   it("shows the live signed-in identity when viewing another parent, escaping account content", async () => {
     const { portal, headers } = await setupPortal();

@@ -1,3 +1,4 @@
+import type { ProfileAccessMode } from "./shared.js";
 import { householdData, adultInput, familyFormInput, currentAdults, rosterVersion, requirePersonCapability, validateAdults, independentOfAdults, applyAdults } from "./family-bundle.js";
 import { loginAllowed } from "../login-policy.js";
 import {
@@ -30,8 +31,8 @@ export const actionInput = z
     reason: z.string().trim().max(1000).default(""),
   })
   .strict();
-export function familyProfileService(db: Database, config: RuntimeConfig) {
-  const run = profileAccess(db, config, "familyProfiles");
+export function familyProfileService(db: Database, config: RuntimeConfig, accessMode: ProfileAccessMode = "client") {
+  const run = profileAccess(db, config, "familyProfiles", accessMode);
   const requireOwn = (own: string[], familyId: string) => {
     if (!own.includes(familyId))
       throw new ProfileError(403, "您目前沒有此家庭的填寫權限。");
@@ -208,7 +209,7 @@ export function familyProfileService(db: Database, config: RuntimeConfig) {
       const x = familyFormInput.parse(input);
       return run(actor, async (tx, access) => {
         requireOwn(access.own, familyId);
-        await requirePersonCapability(tx, actor);
+        if (accessMode !== "administration") await requirePersonCapability(tx, actor);
         const [person] = await rows(tx, sql`select 1 from directory.people where id=${actor.personId} and kind='adult' and status='active'`);
         if (!person) throw new ProfileError(403, "只有現任成人家長或監護人可送出。");
         const [previous] = await rows(tx, sql`select * from directory.family_change_requests where id=${id} for update`);
@@ -414,7 +415,7 @@ export function familyProfileService(db: Database, config: RuntimeConfig) {
                 "送件人已不具家庭權限，請退回重新送件。",
               );
             if (s.schema_version === 2) {
-              await requirePersonCapability(tx, actor);
+              if (accessMode !== "administration") await requirePersonCapability(tx, actor);
               if (!(await loginAllowed(tx, config, s.submitted_by))) throw new ProfileError(409, "送件人已失去登入資格。");
               const submitted = familyFormInput.parse({ ...data, adults: s.data.adults, rosterVersion: s.data.rosterVersion, reason: s.reason,
                 version: r.version, submissionVersion: s.version, baseRevision: s.base_revision });
