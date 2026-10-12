@@ -7,7 +7,7 @@ import { loginAllowed } from "../login-policy.js";
 // Read-only release gate: report only the configured operator-confirmed identities.
 try {
   let valid = true;
-  const requested = [["admin", config.STAGING_ADMIN_EMAIL] as const, ...[config.STAGING_PARENT_EMAIL, ...config.STAGING_PARENT_EMAILS].filter(Boolean).map(email => ["parent", email] as const)];
+  const requested = [...(config.STAGING_ADMIN_EMAIL ? [["admin", config.STAGING_ADMIN_EMAIL] as const] : []), ...[config.STAGING_PARENT_EMAIL, ...config.STAGING_PARENT_EMAILS].filter(Boolean).map(email => ["parent", email] as const)];
   for (const [role, email] of requested) {
     const matches = await db.select().from(people).where(eq(people.normalizedLoginEmail, email!));
     const [person] = matches;
