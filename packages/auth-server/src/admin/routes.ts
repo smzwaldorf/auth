@@ -40,11 +40,12 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
       const current = await auth.api.getSession({ headers: c.req.raw.headers });
       const live = current && await hasLiveSession(db, current.user.id, current.session.id);
       if (c.req.path === "/admin/sign-in" && c.req.method === "GET") {
-        if (live) return c.redirect("/admin", 303);
+        if (live) return c.redirect(await isAdmin(db, config, current.user.id) ? "/admin" : "/profiles", 303);
         return c.html(layout(t("Admin sign-in"), `<section class="card"><span class="eyebrow">SMZ Identity</span><h1>${escape(t("Administrator sign-in"))}</h1><p class="lede">${escape(t("Sign in with a school-approved administrator account."))}</p><a class="btn" href="/sign-in?admin=1">${escape(t("Sign in"))}</a></section>`, false), 200);
       }
       if (!current || !live) return c.redirect("/admin/sign-in", 303);
       if (!(await isAdmin(db, config, current.user.id))) {
+        if (c.req.method === "GET") return c.redirect("/profiles", 303);
         if (c.req.path !== "/admin" || c.req.method !== "GET") return c.redirect("/admin", 303);
         return c.html(layout(t("Not authenticated"), `<section class="card"><h1>${escape(t("Not authenticated"))}</h1><p role="alert">${escape(t("Your current account does not have administrator access. Sign out to use an administrator account."))}</p><form method="post" action="/admin/sign-out"><button type="submit">${escape(t("Sign out"))}</button></form></section>`, false), 403);
       }

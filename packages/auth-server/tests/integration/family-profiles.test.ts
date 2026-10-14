@@ -819,6 +819,14 @@ describe.runIf(enabled)("native Auth profile portal", () => {
       expect(result.status).toBe(303);
       expect(result.headers.get('location')).toBe('/admin');
     }
+    for (const path of ['/admin', '/admin/', '/admin/users', '/admin/sign-in']) {
+      const result = await app.request(path, { headers: parentLogin.headers });
+      expect(result.status).toBe(303);
+      expect(result.headers.get('location')).toBe('/profiles');
+    }
+    const deniedWrite = await app.request('/admin/users', { method: 'POST', headers: parentLogin.headers, body: '' });
+    expect(deniedWrite.status).toBe(303);
+    expect(deniedWrite.headers.get('location')).toBe('/admin');
     expect((await app.request(`/profiles/family/${family}`, { headers: parentLogin.headers })).status).toBe(200);
     const submission = await app.request(`/profiles/family/${family}/submit-all`, { method: 'POST', headers: adminLogin.headers });
     expect(submission.status).toBe(303);
@@ -887,7 +895,7 @@ describe.runIf(enabled)("native Auth profile portal", () => {
     for (const method of ['GET', 'POST']) {
       const response = await app.request(method === 'GET' ? path : `${path}/approve`, { method, headers: parentLogin.headers, ...(method === 'POST' ? { body } : {}) });
       expect(response.status).toBe(303);
-      expect(response.headers.get('location')).toBe('/admin');
+      expect(response.headers.get('location')).toBe(method === 'GET' ? '/profiles' : '/admin');
     }
     await link(admin);
     expect((await app.request(`${path}/approve`, { method: 'POST', headers: adminLogin.headers, body })).status).toBe(403);
@@ -895,7 +903,7 @@ describe.runIf(enabled)("native Auth profile portal", () => {
     await pool.query("update auth.oauth_client set metadata='{}' where client_id='smz-profiles'");
     expect((await app.request(path, { headers: adminLogin.headers })).status).toBe(200);
     await pool.query("delete from directory.person_roles where person_id=$1 and role='admin'", [admin.personId]);
-    expect((await app.request(path, { headers: adminLogin.headers })).headers.get('location')).toBe('/admin');
+    expect((await app.request(path, { headers: adminLogin.headers })).headers.get('location')).toBe('/profiles');
   });
   it("rechecks admin authority in the service and keeps client API access separate", async () => {
     const native = familyProfileService(db, config, "administration");

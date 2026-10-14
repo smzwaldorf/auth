@@ -12,6 +12,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "development:seed": "tsx src/development/seed-cli.ts",
+    "development:profiles": "tsx src/development/profiles-cli.ts",
     "directory:seed": "tsx src/seed/cli.ts",
     "start": "node dist/server.js",
     "development:school": "tsx src/development/school-cli.ts"

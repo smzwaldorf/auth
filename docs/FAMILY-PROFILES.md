@@ -23,6 +23,12 @@ Admin review checks the live session and current Auth admin admission inside eve
 
 Regular users see their own personal profile and current families, including other parents' approved contact details and children's names/relationships. Current adult parents and guardians can request changes for all other current parents and guardians in the same active family. A delegated applicant can see their own requests, submissions, and decisions; unrelated personal requests and revision history remain restricted to the subject and authorized reviewers. Admins and explicitly appointed registrars have independent review authority. Approval is atomic, self-approval is denied, and old submissions and revisions are retained.
 
+## Local development setup
+
+For an explicitly opted-in loopback development environment, run `npm run development:profiles -w @smz/auth-server` to enable the native family profile capability. Add `-- --include-person-profiles` to explicitly enable parent contact editing and the combined household submission form as well. This setup command preserves other client metadata and refuses disabled clients/applications. It does not change people, family memberships, or reviewer authority. Portal visits still never grant or restore capabilities.
+
+Signed-in non-admin users visiting admin pages are redirected to `/profiles`; admin write requests remain unauthorized.
+
 ## Local verification
 
 ```sh
