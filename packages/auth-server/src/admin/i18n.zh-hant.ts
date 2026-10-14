@@ -5,6 +5,7 @@
  * A unit test fails when a `t("…")` key in src/admin has no entry here.
  */
 export const zhHant: Record<string, string> = {
+  "Adult login accounts. Open a user to manage their roles and relationships.": "成人登入帳戶。開啟用戶以管理其角色與關係。",
   // ---- Layout / navigation ---------------------------------------------------------------------
   ", ": "，",
   "Language": "語言",

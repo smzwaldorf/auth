@@ -211,8 +211,10 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
   });
   // ---- Users ------------------------------------------------------------------------
   app.get("/users", async c => {
-    const f = { q: clip(c.req.query("q")), page: Math.min(100000, Math.max(1, Number.parseInt(c.req.query("page") || "1", 10) || 1)), status: clip(c.req.query("status"), 10), role: clip(c.req.query("role"), 10), kind: clip(c.req.query("kind"), 10) };
-    return c.html(usersListView(await service.list(f.q, f.page, f.status, f.role, f.kind), f));
+    const f = { q: clip(c.req.query("q")), page: Math.min(100000, Math.max(1, Number.parseInt(c.req.query("page") || "1", 10) || 1)), status: clip(c.req.query("status"), 10), role: clip(c.req.query("role"), 10), kind: "adult" };
+    const nonce = crypto.randomUUID();
+    c.header("Content-Security-Policy", `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`);
+    return c.html(usersListView(await service.list(f.q, f.page, f.status, f.role, f.kind), f, nonce));
   });
   app.get("/users/new", async c => {
     const returnTo = c.req.query("returnTo") || "", role = c.req.query("role") || "";
