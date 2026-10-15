@@ -5,6 +5,10 @@
  * A unit test fails when a `t("…")` key in src/admin has no entry here.
  */
 export const zhHant: Record<string, string> = {
+  "Manage school accounts, directory and applications": "管理學校帳戶、名錄與應用程式",
+  "Not signed in": "尚未登入",
+  "Signed in": "已登入",
+  "Account": "帳戶",
   "Open": "開啟",
   "App A": "應用程式 A",
   "App B": "應用程式 B",

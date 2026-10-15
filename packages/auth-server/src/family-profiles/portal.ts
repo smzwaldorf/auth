@@ -92,18 +92,12 @@ export function profilePortal(
     const response = await auth.api.signOutLinkedApplications({ headers: c.req.raw.headers, asResponse: true });
     if (!response.ok) return response;
     const headers = new Headers(response.headers);
-    headers.set("location", "/profiles/signed-out");
+    headers.set("location", "/");
     headers.delete("content-type");
     headers.delete("content-length");
     return new Response(null, { status: 303, headers });
   });
-  app.get("/signed-out", async c => {
-    const current = await auth.api.getSession({ headers: c.req.raw.headers });
-    if (current && await hasLiveSession(db, current.user.id, current.session.id) && await isAdmin(db, config, current.user.id))
-      return c.redirect("/admin", 303);
-    c.header("Refresh", "2; url=/profiles");
-    return c.html(page("已登出", '<p>您已登出家庭與個人資料。兩秒後將自動前往登入頁面。</p><a class="button" href="/profiles">立即登入</a>'));
-  });
+  app.get("/signed-out", c => c.redirect("/", 303));
   app.use("*", async (c, next) => {
     const current = await auth.api.getSession({ headers: c.req.raw.headers });
     if (

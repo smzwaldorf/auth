@@ -1,3 +1,4 @@
+import { isAdmin } from "./admin/service.js";
 import { getCookie } from "hono/cookie";
 import { defaultLocale, localeCookie, parseLocale, withLocale, currentLocale, t, label } from "./admin/i18n.js";
 import { profilePortal } from "./family-profiles/portal.js";
@@ -18,7 +19,7 @@ import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 
 import { createAuditRecorder } from "./audit-service.js";
-import { centralSessionState } from "./global-logout.js";
+import { centralSessionState, hasLiveSession } from "./global-logout.js";
 import { createAuth } from "./auth-factory.js";
 import { runtimeUrls, type RuntimeConfig } from "./runtime-config.js";
 import type { Database } from "./db/database.js";
@@ -58,7 +59,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
     return null;
   }
 
-  app.use("*", (c, next) => secureHeaders({ referrerPolicy: (c.req.path === "/sign-in" || c.req.path === "/admin" || c.req.path.startsWith("/admin/") || c.req.path === "/profiles" || c.req.path.startsWith("/profiles/")) ? "same-origin" : c.req.path.startsWith("/logout-all/") ? "origin" : "no-referrer" })(c, next));
+  app.use("*", (c, next) => secureHeaders({ referrerPolicy: (c.req.path === "/" || c.req.path === "/sign-in" || c.req.path === "/admin" || c.req.path.startsWith("/admin/") || c.req.path === "/profiles" || c.req.path.startsWith("/profiles/")) ? "same-origin" : c.req.path.startsWith("/logout-all/") ? "origin" : "no-referrer" })(c, next));
   app.use("*", async (c, next) => { c.header("Cache-Control", "no-store"); await next(); });
   app.use("*", async (c, next) => {
     if (localDevelopmentRequest(config, c.req.raw, c.env?.transport?.remoteAddress)) localDevelopmentRequests.add(c.req.raw);
@@ -111,8 +112,27 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
   app.route("/api/directory/v1/person-profiles", familyProfileRoutes(personProfileService(db, config), authenticateProfiles, "people"));
 
 
+  app.get("/sign-out", c => c.redirect("/", 303));
+  app.post("/sign-out", async c => {
+    if (c.req.header("origin") !== new URL(config.AUTH_ISSUER).origin) return c.text("Origin denied", 403);
+    const response = await auth.api.signOutLinkedApplications({ headers: c.req.raw.headers, asResponse: true });
+    if (!response.ok) return response;
+    const headers = new Headers(response.headers);
+    headers.set("location", "/");
+    headers.delete("content-type");
+    headers.delete("content-length");
+    return new Response(null, { status: 303, headers });
+  });
+
   app.get("/", async (c) => withLocale(parseLocale(getCookie(c, localeCookie)) ?? defaultLocale, "/", async () => {
     c.header("Cache-Control", "no-store");
+    const current = await auth.api.getSession({ headers: c.req.raw.headers });
+    const signedIn = current && await hasLiveSession(db, current.user.id, current.session.id);
+    const showAdminLink = signedIn && await isAdmin(db, config, current.user.id);
+    const accountStatus = signedIn
+      ? `<section class="login-status" aria-label="${escapeHtml(t("Account"))}"><div><strong>${escapeHtml(t("Signed in"))} · ${escapeHtml(current.user.name)}</strong><span>${escapeHtml(current.user.email)}</span></div><form method="post" action="/sign-out"><button type="submit">${escapeHtml(t("Sign out"))}</button></form></section>`
+      : `<section class="login-status"><span>${escapeHtml(t("Not signed in"))}</span><a href="/profiles">${escapeHtml(t("Sign in"))}</a></section>`;
+
     const linkedApps = await db
       .select({
         clientId: applications.clientId,
@@ -138,7 +158,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
       return [`<li><div><strong>${displayName}</strong>${linkedApp.description ? `<span>${escapeHtml(linkedApp.description)}</span>` : ""}</div><a href="${escapeHtml(launchUrl)}">${escapeHtml(t("Open"))} <span aria-hidden="true">→</span></a></li>`];
     }).join("");
 
-    return c.html(`<!doctype html><html lang="${currentLocale()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(t("Applications"))} · 善美真華德福</title><style>:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#28211d;background:#f2eee8}*{box-sizing:border-box}body{min-height:100vh;margin:0;padding:32px 20px;background:radial-gradient(circle at 10% 0%,#f0ddd0,transparent 38%),#f2eee8}main{width:min(100%,680px);margin:8vh auto 0;padding:36px;border:1px solid #ddd2c8;border-radius:24px;background:#fff;box-shadow:0 24px 70px #3827181f}header{margin-bottom:30px}.eyebrow{display:block;margin-bottom:7px;color:#8c7669;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}h1{margin:0 0 10px;font-size:32px;letter-spacing:-.04em}p{margin:0;color:#75675d;line-height:1.55}ul{display:grid;gap:12px;margin:0;padding:0;list-style:none}li{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px;border:1px solid #e6dbd3;border-radius:15px;background:#fcfaf8}li div{display:grid;gap:4px}li strong{font-size:17px}li span{color:#8c7669;font-size:13px}li a{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;padding:11px 14px;border-radius:10px;color:#fff;background:#8b3e25;text-decoration:none;font-weight:750}li a span{color:inherit;font-size:16px}.empty{padding:18px;border:1px dashed #d8c9bf;border-radius:15px}@media(max-width:520px){main{padding:26px}li{align-items:flex-start;flex-direction:column}li a{width:100%;justify-content:center}}</style></head><body><main><header><span class="eyebrow">善美真華德福</span><a href="/admin" style="float:right;color:#8b3e25;font-size:14px">${escapeHtml(t("Admin Panel"))}</a><h1>${escapeHtml(t("School applications"))}</h1><p>${escapeHtml(t("Choose an app to get started. Use your school-approved account to sign in when prompted."))}</p></header><ul><li><div><strong>家庭與個人資料</strong><span>申請更新、審核與修訂紀錄</span></div><a href="/profiles">開啟 <span aria-hidden="true">→</span></a></li></ul><hr style="border:0;border-top:1px solid #e6dbd3;margin:24px 0">${appCards ? `<ul>${appCards}</ul>` : `<p class="empty">${escapeHtml(t("No apps are available yet. Please contact your school administrator."))}</p>`}</main><script>if("serviceWorker" in navigator){navigator.serviceWorker.getRegistrations().then((registrations)=>Promise.all(registrations.map((registration)=>registration.unregister())))}</script></body></html>`);
+    return c.html(`<!doctype html><html lang="${currentLocale()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(t("Applications"))} · 善美真華德福</title><style>:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#28211d;background:#f2eee8}*{box-sizing:border-box}body{min-height:100vh;margin:0;padding:32px 20px;background:radial-gradient(circle at 10% 0%,#f0ddd0,transparent 38%),#f2eee8}main{width:min(100%,680px);margin:8vh auto 0;padding:36px;border:1px solid #ddd2c8;border-radius:24px;background:#fff;box-shadow:0 24px 70px #3827181f}.home-nav{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:24px;padding-bottom:18px;border-bottom:1px solid #e6dbd3}.home-nav .eyebrow{margin:0}.nav-account{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.admin-link{color:#8b3e25;font-size:14px}.login-status{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0}.login-status strong{font-size:14px}.login-status div{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}.login-status span{color:#75675d;font-size:14px}.login-status form{margin:0}.login-status button,.login-status a{font:inherit;cursor:pointer;border:0;padding:10px 16px;border-radius:10px;background:#8b3e25;color:white;text-decoration:none;white-space:nowrap}header{margin-bottom:30px}.eyebrow{display:block;margin-bottom:7px;color:#8c7669;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}h1{margin:0 0 10px;font-size:32px;letter-spacing:-.04em}p{margin:0;color:#75675d;line-height:1.55}ul{display:grid;gap:12px;margin:0;padding:0;list-style:none}li{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px;border:1px solid #e6dbd3;border-radius:15px;background:#fcfaf8}li div{display:grid;gap:4px}li strong{font-size:17px}li span{color:#8c7669;font-size:13px}li a{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;padding:11px 14px;border-radius:10px;color:#fff;background:#8b3e25;text-decoration:none;font-weight:750}li a span{color:inherit;font-size:16px}.empty{padding:18px;border:1px dashed #d8c9bf;border-radius:15px}@media(max-width:520px){main{padding:26px}li{align-items:flex-start;flex-direction:column}li a{width:100%;justify-content:center}}</style></head><body><main><nav class="home-nav" aria-label="${escapeHtml(t("Account"))}"><span class="eyebrow">善美真華德福</span><div class="nav-account">${accountStatus}</div></nav><header><h1>${escapeHtml(t("School applications"))}</h1><p>${escapeHtml(t("Choose an app to get started. Use your school-approved account to sign in when prompted."))}</p></header><ul>${showAdminLink ? `<li><div><strong>${escapeHtml(t("Admin Panel"))}</strong><span>${escapeHtml(t("Manage school accounts, directory and applications"))}</span></div><a href="/admin">${escapeHtml(t("Open"))} <span aria-hidden="true">→</span></a></li>` : ""}<li><div><strong>家庭與個人資料</strong><span>申請更新、審核與修訂紀錄</span></div><a href="/profiles">開啟 <span aria-hidden="true">→</span></a></li></ul><hr style="border:0;border-top:1px solid #e6dbd3;margin:24px 0">${appCards ? `<ul>${appCards}</ul>` : `<p class="empty">${escapeHtml(t("No apps are available yet. Please contact your school administrator."))}</p>`}</main><script>if("serviceWorker" in navigator){navigator.serviceWorker.getRegistrations().then((registrations)=>Promise.all(registrations.map((registration)=>registration.unregister())))}</script></body></html>`);
   }));
 
   app.get("/health", async (c) => {

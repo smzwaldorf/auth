@@ -91,7 +91,7 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
     const response = await auth.api.signOut({ headers: c.req.raw.headers, asResponse: true });
     if (!response.ok) return response;
     const headers = new Headers(response.headers);
-    headers.set("location", "/admin");
+    headers.set("location", "/");
     headers.delete("content-type"); headers.delete("content-length");
     return new Response(null, { status: 303, headers });
   });
