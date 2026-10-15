@@ -101,7 +101,8 @@ export function profilePortal(
     const current = await auth.api.getSession({ headers: c.req.raw.headers });
     if (current && await hasLiveSession(db, current.user.id, current.session.id) && await isAdmin(db, config, current.user.id))
       return c.redirect("/admin", 303);
-    return c.html(page("已登出", '<p>您已登出家庭與個人資料。</p><a class="button" href="/profiles">重新登入</a>'));
+    c.header("Refresh", "2; url=/profiles");
+    return c.html(page("已登出", '<p>您已登出家庭與個人資料。兩秒後將自動前往登入頁面。</p><a class="button" href="/profiles">立即登入</a>'));
   });
   app.use("*", async (c, next) => {
     const current = await auth.api.getSession({ headers: c.req.raw.headers });

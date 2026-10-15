@@ -5,6 +5,37 @@
  * A unit test fails when a `t("…")` key in src/admin has no entry here.
  */
 export const zhHant: Record<string, string> = {
+  "Open": "開啟",
+  "App A": "應用程式 A",
+  "App B": "應用程式 B",
+  "Email CMS": "電子報管理",
+  "Email CMS server": "電子報伺服器",
+  "Family and personal profiles": "家庭與個人資料",
+  "Identity administration": "總管",
+  "SMZ Forms (local)": "善美真表單（本機）",
+
+  "Admin Panel": "總管",
+  "School applications": "學校應用程式",
+  "Choose an app to get started. Use your school-approved account to sign in when prompted.": "選擇應用程式開始使用，並於提示時以學校核准的帳戶登入。",
+  "No apps are available yet. Please contact your school administrator.": "目前尚無可用的應用程式，請聯絡學校管理員。",
+  "Try school sign-in in a browser app": "在瀏覽器應用程式中試用學校帳戶登入",
+  "Try school sign-in in a server app": "在伺服器應用程式中試用學校帳戶登入",
+  "Read and manage school newsletters": "閱讀及管理學校電子報",
+  "Manage school accounts and applications": "管理學校帳戶及應用程式",
+  "Connect with your school account": "使用學校帳戶連線",
+
+  "Sign in by email": "使用電郵登入",
+  "Approved email address": "已核准的電郵地址",
+  "Email me a sign-in link": "寄送登入連結",
+  "The link expires in five minutes and works once.": "登入連結將於五分鐘後失效，且僅可使用一次。",
+  "Development only": "僅供開發測試",
+  "Choose a synthetic account. No email or password required.": "選擇測試帳戶，無需電郵驗證或密碼。",
+  "Sign in to SMZ": "登入善美真華德福",
+  "Use the email address pre-approved by the school directory.": "請使用學校預先核准的電郵地址。",
+  "Continue with Google": "使用 Google 繼續",
+  "Google credentials are not configured.": "尚未設定 Google 登入。",
+  "Students cannot sign in in version 1.": "目前尚未開放學生登入。",
+  "Continue as {name}": "以 {name} 身份繼續",
   "Adult login accounts. Open a user to manage their roles and relationships.": "成人登入帳戶。開啟用戶以管理其角色與關係。",
   // ---- Layout / navigation ---------------------------------------------------------------------
   ", ": "，",
