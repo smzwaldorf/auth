@@ -10,6 +10,12 @@ import { siteOrigin } from "./sites.js";
 import { escape, layout, pageHead } from "./views.js";
 import { t } from "./i18n.js";
 
+export const presentationInput = z.object({
+  displayName: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(500),
+  showInLauncher: z.boolean(),
+  version: z.string().min(1).max(80),
+});
 export const registrationInput = z.object({
   displayName: z.string().trim().min(1).max(120),
   site: z.string().trim().max(2048),
@@ -51,10 +57,32 @@ export function registrationService(db: Database, config: RuntimeConfig) {
     return { clientId, secret };
   }
   async function get(clientId: string) {
-    const [row] = await db.select({ clientId: applications.clientId, displayName: applications.displayName, origin: applications.publicOrigin, callback: oauthClient.redirectUris, logout: oauthClient.postLogoutRedirectUris, public: oauthClient.public }).from(applications).innerJoin(oauthClient, eq(applications.clientId, oauthClient.clientId)).where(eq(applications.clientId, clientId));
+    const [row] = await db.select({ clientId: applications.clientId, displayName: applications.displayName, description: applications.description, showInLauncher: applications.showInLauncher, version: sql<string>`${applications.updatedAt}::text`, origin: applications.publicOrigin, callback: oauthClient.redirectUris, logout: oauthClient.postLogoutRedirectUris, public: oauthClient.public }).from(applications).innerJoin(oauthClient, eq(applications.clientId, oauthClient.clientId)).where(eq(applications.clientId, clientId));
     return row;
   }
-  return { create, get };
+  async function savePresentation(actorId: string, sessionId: string, clientId: string, raw: unknown) {
+    const data = presentationInput.parse(raw);
+    await db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(73692041)`);
+      const [live] = await tx.select().from(session).where(and(eq(session.id, sessionId), eq(session.userId, actorId), sql`${session.expiresAt} > now()`));
+      if (!live || !(await isAdmin(tx, config, actorId))) throw new AdminError(t("Administrator access is no longer active."), 403);
+      const changed = await tx.update(applications).set({ displayName: data.displayName, description: data.description, showInLauncher: data.showInLauncher, updatedAt: new Date() }).where(and(eq(applications.clientId, clientId), sql`${applications.updatedAt}::text = ${data.version}`)).returning({ id: applications.clientId });
+      if (!changed.length) throw new AdminError("資料已變更，請重新載入後再儲存。", 409);
+      await tx.insert(auditEvents).values({ eventType: "admin.application.presentation.updated", actor: actorId, clientId, detail: { displayName: data.displayName, description: data.description, showInLauncher: data.showInLauncher } });
+    });
+  }
+  async function setVisibility(actorId: string, sessionId: string, clientId: string, showInLauncher: boolean, version: string) {
+    return db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(73692041)`);
+      const [live] = await tx.select().from(session).where(and(eq(session.id, sessionId), eq(session.userId, actorId), sql`${session.expiresAt} > now()`));
+      if (!live || !(await isAdmin(tx, config, actorId))) throw new AdminError("請重新登入管理員帳戶。", 403);
+      const [row] = await tx.update(applications).set({ showInLauncher, updatedAt: new Date() }).where(and(eq(applications.clientId, clientId), sql`${applications.updatedAt}::text = ${version}`)).returning({ showInLauncher: applications.showInLauncher, version: sql<string>`${applications.updatedAt}::text` });
+      if (!row) throw new AdminError("資料已變更，請重新載入後再試。", 409);
+      await tx.insert(auditEvents).values({ eventType: "admin.application.visibility.updated", actor: actorId, clientId, detail: { showInLauncher } });
+      return { showInLauncher: row.showInLauncher, version: row.version };
+    });
+  }
+  return { create, get, savePresentation, setVisibility };
 }
 export function registrationView(values: Record<string, unknown> = {}, error = "") {
   const field = (name: string, label: string, placeholder: string) => `<label for="${name}">${escape(label)}</label><input style="width:100%" id="${name}" name="${name}" required maxlength="${name === "displayName" ? 120 : 2048}" type="${name === "displayName" ? "text" : "url"}" value="${escape(String(values[name] || ""))}" placeholder="${escape(placeholder)}">`;
@@ -71,5 +99,5 @@ export function setupView(row: NonNullable<Awaited<ReturnType<ReturnType<typeof 
     t("After sign-in, call {endpoint} with the access token. Enforce the returned access and handle revoked or expired sessions.", { endpoint: `<code>${escape(urls.directoryAudience)}/me/access-context</code>` }),
     t("Test sign-in, refresh, access revocation, and sign-out. Your app owns its local session and permissions."),
   ];
-  return layout(t("Application setup"), `${pageHead({ crumbs: [[t("Applications"), "/admin/applications"], [row.displayName]], eyebrow: t("OIDC settings"), title: row.displayName, lede: `${escape(t("Client"))} <strong>${escape(row.clientId)}</strong> · ${escape(row.public ? t("Browser app") : t("Server app"))} · <a href="${escape(row.origin ?? "")}" target="_blank" rel="noopener noreferrer">${escape(row.origin ?? "")}</a>` })}${secret ? `<div class="notice warn" role="alert">${escape(t("Save the client secret now in your server secret store. It is shown only in this response. Never include it in browser code."))}</div>` : !row.public ? `<div class="notice info">${escape(t("The client secret is not retrievable. Use the secret saved when this client was created."))}</div>` : ""}<div class="split"><section class="card"><h2>${escape(t("Settings"))}</h2><p class="lede">${escape(t("Use these in your application's OIDC library."))}</p><pre class="card" style="margin:0">${escape(JSON.stringify(settings, null, 2))}</pre></section><section class="card"><h2>${escape(t("Integration steps"))}</h2><ol class="steps">${steps.map(s => `<li>${s}</li>`).join("")}</ol><p class="muted">${escape(t("Discovery"))}: <code>${escape(urls.authOrigin)}/.well-known/oauth-authorization-server/api/auth</code></p><p class="muted">${t("Local examples: browser integration in {a}; server integration in {b}.", { a: "<code>apps/vite-app</code>", b: "<code>apps/express-app</code>" })}</p></section></div>`, true, "applications");
+  return layout(t("Application setup"), `${pageHead({ crumbs: [[t("Applications"), "/admin/applications"], [row.displayName]], eyebrow: t("OIDC settings"), title: row.displayName, lede: `${escape(t("Client"))} <strong>${escape(row.clientId)}</strong> · ${escape(row.public ? t("Browser app") : t("Server app"))} · <a href="${escape(row.origin ?? "")}" target="_blank" rel="noopener noreferrer">${escape(row.origin ?? "")}</a>` })}${secret ? `<div class="notice warn" role="alert">${escape(t("Save the client secret now in your server secret store. It is shown only in this response. Never include it in browser code."))}</div>` : !row.public ? `<div class="notice info">${escape(t("The client secret is not retrievable. Use the secret saved when this client was created."))}</div>` : ""}<form class="card" method="post" action="/admin/applications/presentation/${encodeURIComponent(row.clientId)}"><h2>首頁顯示設定</h2><p class="lede">設定應用程式清單中的名稱、說明與可見性。隱藏不會停用應用程式或變更登入權限。</p><input type="hidden" name="version" value="${escape(row.version)}"><div class="field"><label for="app-name">應用程式名稱</label><input id="app-name" name="displayName" required maxlength="120" value="${escape(row.displayName)}"></div><div class="field"><label for="app-description">說明</label><textarea id="app-description" name="description" maxlength="500" rows="3" style="width:100%">${escape(row.description)}</textarea></div><label class="check"><input type="checkbox" name="showInLauncher" value="true" ${row.showInLauncher ? "checked" : ""}>在首頁應用程式清單顯示</label><div class="actions" style="margin-top:16px"><button>儲存顯示設定</button></div></form><div class="split"><section class="card"><h2>${escape(t("Settings"))}</h2><p class="lede">${escape(t("Use these in your application's OIDC library."))}</p><pre class="card" style="margin:0">${escape(JSON.stringify(settings, null, 2))}</pre></section><section class="card"><h2>${escape(t("Integration steps"))}</h2><ol class="steps">${steps.map(s => `<li>${s}</li>`).join("")}</ol><p class="muted">${escape(t("Discovery"))}: <code>${escape(urls.authOrigin)}/.well-known/oauth-authorization-server/api/auth</code></p><p class="muted">${t("Local examples: browser integration in {a}; server integration in {b}.", { a: "<code>apps/vite-app</code>", b: "<code>apps/express-app</code>" })}</p></section></div>`, true, "applications");
 }

@@ -130,6 +130,8 @@ export const applications = directorySchema.table("applications", {
     .primaryKey()
     .references(() => oauthClient.clientId, { onDelete: "cascade" }),
   displayName: text("display_name").notNull(),
+  description: text("description").default("").notNull(),
+  showInLauncher: boolean("show_in_launcher").default(true).notNull(),
   publicOrigin: text("public_origin"),
   enabled: boolean("enabled").default(true).notNull(),
   ...timestamps,

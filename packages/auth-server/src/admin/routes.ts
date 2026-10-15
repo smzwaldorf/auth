@@ -3,7 +3,7 @@ import { profilePortal } from "../family-profiles/portal.js";
 import { familyWizard } from "./family-wizard.js";
 import { classesList, directoryInsights, familiesList, groupContext, personContext, relationshipInput, relationshipService, studentsList, type ListFilters, type Snapshot } from "./relationships.js";
 import { classDetailView, classesListView, familiesListView, familyDetailView, recordFormView, studentDetailView, studentsListView, type PageOptions, type Section } from "./relationship-views.js";
-import { registrationInput, registrationService, registrationView, setupView } from "./registration.js";
+import { presentationInput, registrationInput, registrationService, registrationView, setupView } from "./registration.js";
 import { applicationService } from "./application-service.js";
 import { applicationsView } from "./application-views.js";
 import { Hono } from "hono";
@@ -104,8 +104,25 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
     return c.html(dashboardView(directoryInsights(snapshot), extra));
   });
   // ---- Applications ---------------------------------------------------------------
-  app.get("/applications", async c => c.html(applicationsView(await accessService.list())));
+  app.get("/applications", async c => {
+    const nonce = crypto.randomUUID();
+    c.header("Content-Security-Policy", `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`);
+    return c.html(applicationsView(await accessService.list(), nonce));
+  });
   const registrations = registrationService(db, config);
+  app.post("/applications/visibility/:clientId", async c => {
+    if (c.req.header("content-type")?.split(";")[0] !== "application/json") return c.json({ error: "Expected JSON" }, 415);
+    let input: unknown;
+    try { input = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
+    const parsed = presentationInput.pick({ showInLauncher: true, version: true }).strict().safeParse(input);
+    if (!parsed.success) return c.json({ error: "Invalid input" }, 400);
+    try {
+      return c.json(await registrations.setVisibility(c.get("actorId"), c.get("sessionId"), c.req.param("clientId"), parsed.data.showInLauncher, parsed.data.version));
+    } catch (error) {
+      if (error instanceof AdminError) return c.json({ error: error.message }, error.status);
+      throw error;
+    }
+  });
   app.get("/applications/new", c => c.html(registrationView()));
   app.post("/applications/register", async c => {
     const body = await c.req.parseBody();
@@ -116,6 +133,18 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
       return c.html(setupView((await registrations.get(result.clientId))!, config, result.secret), 201);
     } catch (error) {
       if (error instanceof AdminError) return c.html(registrationView(body, error.message), error.status);
+      throw error;
+    }
+  });
+  app.post("/applications/presentation/:clientId", async c => {
+    const body = await c.req.parseBody();
+    const parsed = presentationInput.safeParse({ ...body, showInLauncher: body.showInLauncher === "true" });
+    if (!parsed.success) return c.html(layout("無法儲存", "<p>請提供名稱、最多 500 字的說明及有效版本。請返回上一頁修正。</p>", true, "applications"), 400);
+    try {
+      await registrations.savePresentation(c.get("actorId"), c.get("sessionId"), c.req.param("clientId"), parsed.data);
+      return c.redirect(`/admin/applications/setup/${encodeURIComponent(c.req.param("clientId"))}`, 303);
+    } catch (error) {
+      if (error instanceof AdminError) return c.html(layout("無法儲存", `<p>${escape(error.message)}</p>`, true, "applications"), error.status);
       throw error;
     }
   });

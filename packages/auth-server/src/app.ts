@@ -117,6 +117,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
       .select({
         clientId: applications.clientId,
         displayName: applications.displayName,
+        description: applications.description,
         publicOrigin: applications.publicOrigin,
         redirectUris: oauthClient.redirectUris,
         public: oauthClient.public,
@@ -125,6 +126,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
       .innerJoin(oauthClient, eq(applications.clientId, oauthClient.clientId))
       .where(and(
         eq(applications.enabled, true),
+        eq(applications.showInLauncher, true),
         eq(oauthClient.disabled, false),
       ))
       .orderBy(applications.displayName);
@@ -133,7 +135,7 @@ export function createApp(config: RuntimeConfig, db: Database, mailer?: LoginMai
       const launchUrl = appLaunchUrl(linkedApp.publicOrigin, linkedApp.redirectUris);
       if (!launchUrl) return [];
       const displayName = escapeHtml(linkedApp.displayName);
-      return [`<li><div><strong>${displayName}</strong></div><a href="${escapeHtml(launchUrl)}">${escapeHtml(t("Open"))} <span aria-hidden="true">→</span></a></li>`];
+      return [`<li><div><strong>${displayName}</strong>${linkedApp.description ? `<span>${escapeHtml(linkedApp.description)}</span>` : ""}</div><a href="${escapeHtml(launchUrl)}">${escapeHtml(t("Open"))} <span aria-hidden="true">→</span></a></li>`];
     }).join("");
 
     return c.html(`<!doctype html><html lang="${currentLocale()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(t("Applications"))} · 善美真華德福</title><style>:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#28211d;background:#f2eee8}*{box-sizing:border-box}body{min-height:100vh;margin:0;padding:32px 20px;background:radial-gradient(circle at 10% 0%,#f0ddd0,transparent 38%),#f2eee8}main{width:min(100%,680px);margin:8vh auto 0;padding:36px;border:1px solid #ddd2c8;border-radius:24px;background:#fff;box-shadow:0 24px 70px #3827181f}header{margin-bottom:30px}.eyebrow{display:block;margin-bottom:7px;color:#8c7669;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}h1{margin:0 0 10px;font-size:32px;letter-spacing:-.04em}p{margin:0;color:#75675d;line-height:1.55}ul{display:grid;gap:12px;margin:0;padding:0;list-style:none}li{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px;border:1px solid #e6dbd3;border-radius:15px;background:#fcfaf8}li div{display:grid;gap:4px}li strong{font-size:17px}li span{color:#8c7669;font-size:13px}li a{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;padding:11px 14px;border-radius:10px;color:#fff;background:#8b3e25;text-decoration:none;font-weight:750}li a span{color:inherit;font-size:16px}.empty{padding:18px;border:1px dashed #d8c9bf;border-radius:15px}@media(max-width:520px){main{padding:26px}li{align-items:flex-start;flex-direction:column}li a{width:100%;justify-content:center}}</style></head><body><main><header><span class="eyebrow">善美真華德福</span><a href="/admin" style="float:right;color:#8b3e25;font-size:14px">${escapeHtml(t("Admin Panel"))}</a><h1>${escapeHtml(t("School applications"))}</h1><p>${escapeHtml(t("Choose an app to get started. Use your school-approved account to sign in when prompted."))}</p></header><ul><li><div><strong>家庭與個人資料</strong><span>申請更新、審核與修訂紀錄</span></div><a href="/profiles">開啟 <span aria-hidden="true">→</span></a></li></ul><hr style="border:0;border-top:1px solid #e6dbd3;margin:24px 0">${appCards ? `<ul>${appCards}</ul>` : `<p class="empty">${escapeHtml(t("No apps are available yet. Please contact your school administrator."))}</p>`}</main><script>if("serviceWorker" in navigator){navigator.serviceWorker.getRegistrations().then((registrations)=>Promise.all(registrations.map((registration)=>registration.unregister())))}</script></body></html>`);

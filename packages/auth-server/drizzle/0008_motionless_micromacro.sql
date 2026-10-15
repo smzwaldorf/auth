@@ -1,0 +1,2 @@
+ALTER TABLE "directory"."applications" ADD COLUMN "description" text DEFAULT '' NOT NULL;--> statement-breakpoint
+ALTER TABLE "directory"."applications" ADD COLUMN "show_in_launcher" boolean DEFAULT true NOT NULL;
