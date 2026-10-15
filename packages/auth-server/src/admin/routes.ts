@@ -1,3 +1,4 @@
+import { webMcpRoutes } from "./webmcp.js";
 import { profilePortal } from "../family-profiles/portal.js";
 import { familyWizard } from "./family-wizard.js";
 import { classesList, directoryInsights, familiesList, groupContext, personContext, relationshipInput, relationshipService, studentsList, type ListFilters, type Snapshot } from "./relationships.js";
@@ -35,6 +36,8 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
     const locale = parseLocale(getCookie(c, localeCookie)) ?? defaultLocale;
     const requestPath = c.req.path + (c.req.method === "GET" && new URL(c.req.url).search ? new URL(c.req.url).search : "");
     return withLocale(locale, requestPath, async () => {
+      const isWebMcp = c.req.path === "/admin/webmcp" || c.req.path.startsWith("/admin/webmcp/");
+      if (isWebMcp && c.req.method !== "GET" && c.req.header("origin") !== origin) return c.json({ error: "Origin denied" }, 403);
       if (c.req.method !== "GET" && c.req.header("origin") !== origin) return c.html(layout(t("Request denied"), `<section class="card"><h1>${escape(t("Request denied"))}</h1><p>${escape(t("Submit this form from the identity admin panel."))}</p></section>`, false), 403);
       if (["/admin/sign-in", "/admin/sign-out", "/admin/lang"].includes(c.req.path) && c.req.method === "POST") return next();
       const current = await auth.api.getSession({ headers: c.req.raw.headers });
@@ -43,8 +46,10 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
         if (live) return c.redirect(await isAdmin(db, config, current.user.id) ? "/admin" : "/profiles", 303);
         return c.html(layout(t("Admin sign-in"), `<section class="card"><span class="eyebrow">SMZ Identity</span><h1>${escape(t("Administrator sign-in"))}</h1><p class="lede">${escape(t("Sign in with a school-approved administrator account."))}</p><a class="btn" href="/sign-in?admin=1">${escape(t("Sign in"))}</a></section>`, false), 200);
       }
+      if (isWebMcp && (!current || !live)) return c.json({ error: "Sign in as an administrator" }, 401);
       if (!current || !live) return c.redirect("/admin/sign-in", 303);
       if (!(await isAdmin(db, config, current.user.id))) {
+        if (isWebMcp) return c.json({ error: "Administrator access required" }, 403);
         if (c.req.method === "GET") return c.redirect("/profiles", 303);
         if (c.req.path !== "/admin" || c.req.method !== "GET") return c.redirect("/admin", 303);
         return c.html(layout(t("Not authenticated"), `<section class="card"><h1>${escape(t("Not authenticated"))}</h1><p role="alert">${escape(t("Your current account does not have administrator access. Sign out to use an administrator account."))}</p><form method="post" action="/admin/sign-out"><button type="submit">${escape(t("Sign out"))}</button></form></section>`, false), 403);
@@ -53,7 +58,16 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
       c.set("sessionId", current.session.id);
       await next();
       if (c.res.headers.get("content-type")?.includes("text/html")) {
-        const html = await c.res.text();
+        let html = await c.res.text();
+        // A nonce permits only this adapter and any existing page-specific scripts.
+        if (c.res.status === 200 && html.includes("<!--signed-in-account-->")) {
+          const nonce = crypto.randomUUID();
+          const policy = c.res.headers.get("Content-Security-Policy") || "default-src 'none'";
+          c.res.headers.set("Content-Security-Policy", policy.includes("script-src ")
+            ? policy.replace("script-src ", `script-src 'nonce-${nonce}' `) + "; connect-src 'self'"
+            : policy + `; script-src 'nonce-${nonce}'; connect-src 'self'`);
+          html = html.replace("</body>", `<script nonce="${nonce}" src="/admin/webmcp/client.js" defer></script></body>`);
+        }
         if (html.includes("<!--signed-in-account-->")) {
           const person = await service.detail(current.user.id);
           const headers = new Headers(c.res.headers);
@@ -83,6 +97,7 @@ export function adminRoutes(db: Database, config: RuntimeConfig, auth: ReturnTyp
   });
   app.post("/sign-in", c => c.redirect("/sign-in?admin=1", 303));
   const relationships = relationshipService(db, config);
+  app.route("/webmcp", webMcpRoutes(service, relationships));
   // ---- Overview -------------------------------------------------------------------
   app.get("/", async c => {
     const [snapshot, extra] = await Promise.all([relationships.snapshot(), service.overview()]);
