@@ -92,17 +92,15 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
     expect(loginHtml).toContain('href="/sign-in?admin=1">Sign in</a>');
     expect(loginHtml).not.toContain("<nav>");
     expect((await request("/admin/sign-in", admin.cookie)).headers.get("location")).toBe("/admin");
-    expect((await request("/admin/sign-in", parent.cookie)).headers.get("location")).toBe("/admin");
+    expect((await request("/admin/sign-in", parent.cookie)).headers.get("location")).toBe("/profiles");
     for (const path of ["/admin/users/new", "/admin/families", "/admin/students", "/admin/classes", "/admin/applications", "/admin/"]) {
       const denied = await request(path, parent.cookie);
       expect(denied.status).toBe(303);
-      expect(denied.headers.get("location")).toBe("/admin");
+      expect(denied.headers.get("location")).toBe("/profiles");
     }
     const deniedPage = await request("/admin", parent.cookie);
-    expect(deniedPage.status).toBe(403);
-    const deniedHtml = await deniedPage.text();
-    expect(deniedHtml).toContain('<h1>Not authenticated</h1>');
-    expect(deniedHtml).not.toContain("<nav>");
+    expect(deniedPage.status).toBe(303);
+    expect(deniedPage.headers.get("location")).toBe("/profiles");
     const adminPage = await request("/admin", admin.cookie);
     expect(adminPage.status).toBe(200);
     expect(adminPage.headers.get("referrer-policy")).toBe("same-origin");
@@ -125,13 +123,13 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
   it("lets non-admins sign out without allowing cross-origin logout", async () => {
     const nonAdmin = await fixture("parent");
     const page = await request("/admin", nonAdmin.cookie);
-    expect(await page.text()).toContain('action="/admin/sign-out"');
+    expect(page.headers.get("location")).toBe("/profiles");
     expect((await request("/admin/sign-out", nonAdmin.cookie, new URLSearchParams(), "https://foreign.example")).status).toBe(403);
     expect((await request("/admin/sign-out", nonAdmin.cookie)).status).toBe(303);
     expect(await centralSessionState(db, nonAdmin.id, nonAdmin.sessionId)).toBe("active");
     const signedOut = await request("/admin/sign-out", nonAdmin.cookie, new URLSearchParams());
     expect(signedOut.status).toBe(303);
-    expect(signedOut.headers.get("location")).toBe("/admin");
+    expect(signedOut.headers.get("location")).toBe("/");
     expect(signedOut.headers.get("set-cookie")).toContain("Max-Age=0");
     expect(await centralSessionState(db, nonAdmin.id, nonAdmin.sessionId)).toBe("revoked");
     expect((await request("/admin", nonAdmin.cookie)).headers.get("location")).toBe("/admin/sign-in");
@@ -180,7 +178,7 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
   it("rejects revoked administrator approval and student edits", async () => {
     const revoked = await fixture("admin");
     await db.update(loginInvitations).set({ status: "revoked" }).where(eq(loginInvitations.personId, revoked.id));
-    expect((await request("/admin", revoked.cookie)).status).toBe(403);
+    expect((await request("/admin", revoked.cookie)).headers.get("location")).toBe("/profiles");
     const studentId = randomUUID();
     await db.insert(people).values({ id: studentId, kind: "student", displayName: "Read-only student" });
     const student = (await service.detail(studentId))!;
@@ -538,7 +536,7 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("admin panel", ()
   });
   it("rechecks revocation even with a valid signed session cookie", async () => {
     await db.delete(personRoles).where(eq(personRoles.personId, admin.id));
-    expect((await request("/admin", admin.cookie)).status).toBe(403);
+    expect((await request("/admin", admin.cookie)).headers.get("location")).toBe("/profiles");
     await expect(service.save(admin.id, admin.sessionId, undefined, input())).rejects.toThrow("no longer active");
   });
 });

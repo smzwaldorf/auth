@@ -113,7 +113,7 @@ describe.runIf(process.env.RUN_DB_TESTS === "true").sequential("magic links", ()
     const query = await signedQuery();
     const html = await (await app.request(`${origin}/sign-in?${query}`)).text();
     expect(html).toContain('name="email"');
-    expect(html).toContain("Continue with Google");
+    expect(html).toContain("使用 Google 繼續");
     expect(html).not.toContain('type="password"');
     const response = await app.request(`${origin}/sign-in/magic-link`, { method: "POST", headers: { origin, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ email, oauth_query: query }) });
     expect(response.status).toBe(200);
